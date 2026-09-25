@@ -109,18 +109,17 @@
 
   <!-- ЭКРАН НАСТРОЙКИ -->
   <div id="setup" class="card">
-    <label>Agent ID (из дашборда ElevenLabs, один раз)</label>
+    <label>Мозг (Agent ID)</label>
     <input id="agentId" placeholder="agent_..." autocomplete="off">
 
-    <label>Ключ ElevenLabs — нужен только для надиктовки голосом</label>
+    <label>Ключ ElevenLabs</label>
     <input id="apiKey" type="password" placeholder="sk_..." autocomplete="off">
-    <p class="hint">Хранится только в этом браузере. Страницу с ключом никому не давай.</p>
+    
 
-    <label>Контекст дня — можно по-русски (робот узнаёт его тихо при подключении, сам не заговорит; держится весь день)</label>
+    <label>Контекст дня</label>
     <textarea id="dayCtx" placeholder="напр. Wir sind heute in Potsdam auf dem Firmenevent von Firma X. Du schlenderst herum."></textarea>
 
     <button id="connectBtn">▶️ Подключиться</button>
-    <p class="hint">По умолчанию <b>руки свободны</b>: после подключения микрофон открыт постоянно и «Говорить» жать не надо. Пока робот говорит — микрофон закрыт автоматически, чтобы он не слышал сам себя.</p>
   </div>
 
   <!-- ЭКРАН РАБОТЫ -->
@@ -134,17 +133,17 @@
   <div id="live" class="hidden" style="display:none;flex-direction:column;gap:12px">
     <button id="ptt">🎤 ГОВОРИТЬ<br><small>микрофон выключен</small></button>
     <div id="micModeRow" style="display:flex;gap:8px">
-      <button id="mmOpen" style="flex:1;min-height:60px;padding:8px 6px;background:#1e8449">🙌 СВОБОДНЫЕ РУКИ<br><small>слушает сам, всегда</small></button>
-      <button id="mmToggle" style="flex:1;min-height:60px;padding:8px 6px;background:#555">👆 ПО КНОПКЕ<br><small>слушает только после «ГОВОРИТЬ»</small></button>
+      <button id="mmOpen" style="flex:1;min-height:60px;padding:8px 6px;background:#1e8449">🙌 СВОБОДНЫЕ РУКИ</button>
+      <button id="mmToggle" style="flex:1;min-height:60px;padding:8px 6px;background:#555">👆 ПО КНОПКЕ</button>
     </div>
     <!-- 18.09: оператор должен ВИДЕТЬ, что робот расслышал, до того как жать ОТВЕЧАЙ.
          Раньше это уходило только в мелкий лог внизу, и в зале было не разобрать,
          молчит он потому что не услышал, или потому что ход гостя не закрылся. -->
     <div id="lastHeard" style="font-size:14px;line-height:1.35;color:#cfd6df;background:#20242c;
          border-radius:10px;padding:9px 11px;min-height:38px">услышал: <b style="color:#8a8f98">— пока ничего —</b></div>
-    <button id="answerNow" style="min-height:64px;background:#b8860b;touch-action:manipulation">⏭ ОТВЕЧАЙ<br><small>ответит на последние слова гостя</small></button>
-    <button id="stopTalk" style="background:#8e2020;min-height:64px;touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none">✋ ХВАТИТ<br><small>замолчи сейчас · связь жива, нажми ещё раз — снова слушает</small></button>
-    <button id="hushBtn2" style="background:#5a1616;min-height:56px;touch-action:manipulation">⏹ ПОЛНЫЙ СТОП<br><small>связь разорвана, деньги не идут · дальше — «Подключиться»</small></button>
+    <button id="answerNow" style="min-height:64px;background:#b8860b;touch-action:manipulation">⏭ ОТВЕЧАЙ</button>
+    <button id="stopTalk" style="background:#8e2020;min-height:64px;touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none">✋ ХВАТИТ</button>
+    <button id="hushBtn2" style="background:#5a1616;min-height:56px;touch-action:manipulation">⏹ ПОЛНЫЙ СТОП</button>
 
     <!-- РЕЖИССЁР: в уличных пультах эту карточку прятали — на ходу печатать
          некогда, режиссировали голосом. BoS-Bot стоит на сцене стационарно —
@@ -157,8 +156,7 @@
     </div>
 
     <div class="card">
-      <label>Режим микрофона</label>
-      <select id="micMode">
+      <select id="micMode" class="hidden" style="display:none">
         <option value="toggle">🎤 Нажал — слушает, нажал ещё раз — отвечает</option>
         <option value="open">📢 РУКИ СВОБОДНЫ — микрофон всегда открыт (как у поляков)</option>
       </select>
@@ -171,7 +169,7 @@
       </div>
 
       <details style="margin-top:4px">
-        <summary>🔧 Звук — тонкая настройка (обычно не нужна)</summary>
+        <summary>🔧 Звук</summary>
         <div style="display:flex;flex-direction:column;gap:9px;margin-top:8px">
           <label>Какой микрофон слушать</label>
           <select id="micDevice">
@@ -204,12 +202,6 @@
     </div>
 
     <div class="card">
-      <label>⚡ Быстрые действия — скажет сразу</label>
-      <div style="font-size:13px;color:#9aa4b0;margin:-2px 0 8px;line-height:1.45">
-        Задание — голосом: <b>«я оператор, даю задание…»</b> — или текстом
-        в «ЗАДАНИЕ / КОНТЕКСТ» ниже, выполнит сразу. Начало разговора — <b>🗣 Заговорить первым</b>.
-        Гость сказал, а робот молчит — <b>⏭ ОТВЕЧАЙ</b>. Микрофон не расслышал — <b>👤 ГОСТЬ СКАЗАЛ</b>.
-      </div>
       <!-- 18.09: кнопки режимов убраны — контекст даётся голосом.
            25.09: вместе с ними убран и их пустой контейнер — он оставался незакрытым,
            и все карточки ниже (задание, «гость сказал», журнал) вкладывались в эту. -->
@@ -250,13 +242,8 @@
     </div>
 
     <div class="card">
-      <label>📩 ЗАДАНИЕ / КОНТЕКСТ — пиши по-русски, выполнит сразу</label>
-      <div style="font-size:13px;color:#9aa4b0;margin:-2px 0 6px;line-height:1.45">
-        Как есть, своими словами: <b>где стоим, кто перед роботом, что сделать или сказать</b>.
-        Уйдёт сразу, робот сыграет это по-нидерландски, гости задание не услышат.
-        То же самое голосом: «<b>я оператор, даю задание…</b>».
-      </div>
-      <textarea id="ctxInput" placeholder="напр.: перед тобой медсестра в синей форме, поздоровайся и спроси, что она тут тестирует"></textarea>
+      <label>📩 ЗАДАНИЕ / КОНТЕКСТ</label>
+      <textarea id="ctxInput" placeholder="по-русски"></textarea>
       <button id="sendCtx">📩 Выполнить сейчас</button>
       <!-- В пульте-источнике этот контейнер оставался скрытым намертво (display:none
            нигде не снимался) — быстрые кнопки контекста рисовались, но их никто
@@ -272,8 +259,8 @@
          Урок с визита к старшим 08.09: там микрофон гостей не слышал вовсе,
          и без такого поля оператору нечем было заткнуть дыру. -->
     <div class="card">
-      <label>👤 ГОСТЬ СКАЗАЛ — прочитает и ответит</label>
-      <textarea id="gastInput" placeholder="Что сказал или спросил человек — по-русски. Робот ответит ему по-нидерландски, на вопрос — прямо"></textarea>
+      <label>👤 ГОСТЬ СКАЗАЛ</label>
+      <textarea id="gastInput" placeholder="по-русски"></textarea>
       <div class="row">
         <button id="gastMic" style="flex:0 0 56px" title="Надиктовать по-русски"></button>
         <button id="gastBtn">👤 ГОСТЬ СКАЗАЛ → ответь</button>
@@ -316,7 +303,7 @@ const ROBOT = {
   ns: 'vivesbot:',                               // префикс памяти браузера — СВОЙ у каждого пульта (домен GitHub Pages общий)
   agent: 'agent_0201m3b6s54vej0s44wmx1nc8hkr',  // мозг Vives-bot (deploy_robot.py --robot vives), говорит по-нидерландски
   title: 'Vives-bot · Брюгге',
-  version: '25.09.2026 Vives-bot · кнопки',
+  version: '25.09.2026 Vives-bot · 3',
   dayCtx: 'Vrijdag 25 september 2026, Brugge, Hogeschool Vives, Zorglab. Een filmploeg maakt de film van het Zorglab voor het Digital Health Platform. Je spreekt vandaag Nederlands.',
 
   // Копия пульта Максимилиана v «25.09 одна кнопка» (решение Макса: пульт — копия лучшего готового).
@@ -554,7 +541,7 @@ function applyMic(){
     if(paused){
       ptt.classList.remove('live','locked');
       document.body.classList.remove('s-listen','s-speak');
-      ptt.innerHTML='▶️ ПРОДОЛЖИТЬ<br><small>пауза — робот молчит и не слушает</small>';
+      ptt.innerHTML='▶️ ПРОДОЛЖИТЬ<br><small>связь на паузе</small>';
     }
     return;
   }
@@ -565,10 +552,10 @@ function applyMic(){
   document.body.classList.toggle('s-listen', open);
   document.body.classList.toggle('s-speak', agentSpeaking||boardPlaying);
   if(open) ptt.innerHTML='🔴 СЛУШАЮ<br><small>микрофон ВКЛЮЧЁН</small>';
-  else if(quiet) ptt.innerHTML='🤫 ТИХО<br><small>не слышит и сам не заговорит</small>';
-  else if(dictating) ptt.innerHTML='📝 НАДИКТОВКА<br><small>робот тебя сейчас НЕ слышит</small>';
-  else if(micWanted && (agentSpeaking||boardPlaying)) ptt.innerHTML='⏸ ЖДУ<br><small>робот говорит — микрофон закрыт</small>';
-  else if(otvechajDerzhit) ptt.innerHTML='⏳ ОТВЕЧАЕТ<br><small>слушание закрыто до его ответа — так и надо</small>';
+  else if(quiet) ptt.innerHTML='🤫 ТИХО<br><small>не слушает</small>';
+  else if(dictating) ptt.innerHTML='📝 НАДИКТОВКА<br><small>робот не слышит</small>';
+  else if(micWanted && (agentSpeaking||boardPlaying)) ptt.innerHTML='⏸ ЖДУ<br><small>робот говорит</small>';
+  else if(otvechajDerzhit) ptt.innerHTML='⏳ ОТВЕЧАЕТ<br><small>слух закрыт до ответа</small>';
   else ptt.innerHTML='🎤 ГОВОРИТЬ<br><small>микрофон выключен</small>';
 }
 function setWanted(v){
@@ -889,8 +876,8 @@ $('hushBtn2')?.addEventListener('click', ()=>{ vibrate([90,60,90]); hush(); });
   // надпись на кнопке всегда говорит, что будет по нажатию
   window._hvatitUI = () => {
     b.innerHTML = quiet
-      ? '🔊 ПРОДОЛЖИТЬ<br><small>сейчас молчит — нажми, чтобы снова слушал</small>'
-      : '✋ ХВАТИТ<br><small>замолчи сейчас · связь жива, нажми ещё раз — снова слушает</small>';
+      ? '🔊 ПРОДОЛЖИТЬ'
+      : '✋ ХВАТИТ';
     b.style.background = quiet ? '#2e7d32' : '#8e2020';
   };
   window._hvatitUI();
@@ -1296,7 +1283,7 @@ async function answerNow(){
   answerBusy=true; vibrate([50,40,50]);
   if(!await ensureConn()){ answerBusy=false; log('⚠️ ОТВЕЧАЙ не ушло — нет связи'); otklik(b,'нет связи',false); flash('⚠️ Нет связи — сначала «Подключиться»'); return; }
   otvechajBylo=b.innerHTML;
-  b.innerHTML='⏳ СЛУШАНИЕ ЗАКРЫТО<br><small>отвечает на последние слова гостя…</small>'; b.disabled=true;
+  b.innerHTML='⏳ ОТВЕЧАЕТ…'; b.disabled=true;
   gotovitKOtvetu();                      // «хватит» снят, микрофон закрыт, пока робот не заговорит
   try{ conv.sendUserMessage(TOCHKA); log('⏭ ОТВЕЧАЙ — микрофон закрыт до ответа'); }
   catch(e){ log('⚠️ Не ушло: '+(e?.message||e)); }
