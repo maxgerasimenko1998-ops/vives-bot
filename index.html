@@ -1,0 +1,1673 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<!-- ШАБЛОН КАСТОМНОГО РОБОТА. Сделан 13.09.2026 на основе ludwig-console/index.html
+     (уличный пульт, самый чистый на тот момент — otklik(), ensureConn(),
+     flash(), LS-обёртка с префиксом, хак вибрации через <input type="checkbox" switch>).
+     Этот пульт — Vives-bot (НЕ Людвиг: нейтральный дружелюбный робот) на съёмке VIVES Zorglab,
+     Брюгге, 25.09.2026, говорит по-нидерландски. Мозг — prompts/roboty/vives (deploy_robot.py --robot vives).
+     Копия пульта Максимилиана v «25.09 одна кнопка» (ОТВЕЧАЙ держит микрофон до ответа, ЗАДАНИЕ
+     выполняется сразу). Отличаются только мозг, префикс памяти, контекст дня и служебные тексты.
+     ДЛЯ НОВОГО ЗАКАЗЧИКА менять: 1) блок «НАСТРОЙКА РОБОТА» (const ROBOT) в самом
+     начале главного скрипта — префикс памяти, agent ID, заголовок, контекст дня,
+     режимы, быстрые кнопки, служебные тексты; 2) название репозитория при выкладке
+     на GitHub Pages (у каждого робота свой пульт и свой репозиторий). Остальной код
+     читает только ROBOT и трогать его не нужно. -->
+<!-- иначе браузер тихо держит старую версию пульта после правок -->
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<title>Пульт Vives-bot · Брюгге</title>
+<!-- «Добавить на экран Домой» → иконка и полноэкранный режим, как у обычного приложения -->
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" href="icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Vives-bot">
+<meta name="theme-color" content="#14161a">
+<style>
+  :root {
+    --bg:#14161a; --card:#1e2128; --card2:#262a33; --text:#e8e8e8; --dim:#8a8f98;
+    /* акцент бирюзовый (а не золотой, как у других пультов) — на телефоне
+       в списке вкладок сразу видно, что это ДРУГОЙ пульт, не уличный/эфирный */
+    --gold:#3aa6a0; --green:#2ecc71; --red:#e74c3c; --blue:#3498db; --purple:#7d5fc4; --line:#333;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  body {
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,system-ui,sans-serif;
+    min-height:100vh; padding:14px; max-width:480px; margin:0 auto;
+    display:flex; flex-direction:column; gap:12px;
+    transition:background .15s;
+  }
+  /* полноэкранная индикация состояния — видно с одного взгляда в толпе */
+  body.flash { box-shadow: inset 0 0 0 6px var(--gold); }
+  body.s-listen { background:#3a1416; }   /* микрофон открыт — слушаю гостя */
+  body.s-speak  { background:#1a1636; }   /* робот говорит */
+  h1 { font-size:19px; color:var(--gold); text-align:center; padding:2px 0; }
+  .card { background:var(--card); border-radius:14px; padding:13px; display:flex; flex-direction:column; gap:9px; }
+  label { font-size:13px; color:var(--dim); }
+  input, textarea, select {
+    width:100%; background:#0f1114; color:var(--text); border:1px solid var(--line);
+    border-radius:10px; padding:11px; font-size:16px; resize:none;
+  }
+  textarea { min-height:58px; }
+  button {
+    border:none; border-radius:12px; padding:13px; font-size:16px; font-weight:600;
+    color:#fff; background:var(--blue); cursor:pointer; touch-action:manipulation;
+  }
+  button:disabled { opacity:.4; }
+  button.ghost { background:var(--card2); color:var(--text); font-weight:500; font-size:14px; padding:10px; }
+  #status {
+    display:flex; align-items:center; gap:8px; justify-content:center; flex-wrap:wrap;
+    font-size:14px; padding:9px; border-radius:12px; background:rgba(0,0,0,.25);
+  }
+  .dot { width:11px; height:11px; border-radius:50%; background:var(--dim); flex:none; }
+  .dot.on { background:var(--green); }
+  .dot.speak { background:var(--gold); animation:pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity:.35; } }
+  #ptt {
+    height:150px; font-size:24px; border-radius:20px;
+    background:var(--red); user-select:none; -webkit-user-select:none; line-height:1.3;
+  }
+  #ptt.live { background:var(--green); }
+  #ptt.locked { background:#5a3d3d; }
+  #ptt small { font-size:13px; font-weight:400; }
+  .toggle { display:flex; align-items:center; gap:8px; font-size:14px; color:var(--dim); }
+  .toggle input { width:auto; }
+  .quick, .board { display:flex; gap:7px; flex-wrap:wrap; }
+  .quick button { flex:1 1 46%; background:var(--card2); font-size:13px; padding:10px; font-weight:500; }
+  .board button { flex:1 1 46%; background:var(--purple); font-size:13px; padding:12px; font-weight:600; }
+  #log { font-size:12px; color:var(--dim); max-height:120px; overflow-y:auto; background:#0f1114; border-radius:10px; padding:8px; white-space:pre-wrap; }
+  #stopBtn { background:#444; }
+  #stopBtn.arm { background:var(--red); }
+  #sendCtx { background:var(--gold); color:#14161a; }
+  #sayBtn { background:var(--purple); }
+  .row { display:flex; gap:9px; } .row>* { flex:1; }
+  .hidden { display:none !important; }
+  details summary { font-size:13px; color:var(--dim); cursor:pointer; padding:4px 0; }
+  .hint { font-size:11px; color:var(--dim); line-height:1.4; }
+  .banner { text-align:center; font-size:13px; padding:8px; border-radius:10px; background:#123430; color:var(--gold); }
+  /* ОТКЛИК КНОПКИ: на айфоне вибрации у веб-страниц нет, и Макс не понимал,
+     нажалось или нет (08.09). Теперь кнопка на полторы секунды зеленеет и пишет, что ушло. */
+  button.otklik{ background:#1e8449 !important; box-shadow:inset 0 0 0 3px #7be495; transform:scale(.97); transition:transform .08s }
+  button.otklik-net{ background:#8e2020 !important; box-shadow:inset 0 0 0 3px #f08080; }
+</style>
+</head>
+<body>
+  <h1>🤖 Vives-bot — Брюгге</h1>
+
+  <div id="status">
+    <span class="dot" id="connDot"></span><span id="connText">не подключено</span>
+    <span style="opacity:.4">·</span>
+    <span class="dot" id="modeDot"></span><span id="modeText">—</span>
+  </div>
+  <div id="reconnBanner" class="banner hidden">🔄 Связь прервалась — переподключаюсь…</div>
+
+  <!-- ЭКРАН НАСТРОЙКИ -->
+  <div id="setup" class="card">
+    <label>Agent ID (из дашборда ElevenLabs, один раз)</label>
+    <input id="agentId" placeholder="agent_..." autocomplete="off">
+
+    <label>Ключ ElevenLabs — нужен только для надиктовки голосом</label>
+    <input id="apiKey" type="password" placeholder="sk_..." autocomplete="off">
+    <p class="hint">Хранится только в этом браузере. Страницу с ключом никому не давай.</p>
+
+    <label>Контекст дня — можно по-русски (робот узнаёт его тихо при подключении, сам не заговорит; держится весь день)</label>
+    <textarea id="dayCtx" placeholder="напр. Wir sind heute in Potsdam auf dem Firmenevent von Firma X. Du schlenderst herum."></textarea>
+
+    <button id="connectBtn">▶️ Подключиться</button>
+    <p class="hint">По умолчанию <b>руки свободны</b>: после подключения микрофон открыт постоянно и «Говорить» жать не надо. Пока робот говорит — микрофон закрыт автоматически, чтобы он не слышал сам себя.</p>
+  </div>
+
+  <!-- ЭКРАН РАБОТЫ -->
+  <!-- ТАКТИЛЬНЫЙ ОТКЛИК НА АЙФОНЕ. navigator.vibrate в Safari не существует вовсе
+       (WebKit его не поддерживает), поэтому единственный доступный способ — переключатель
+       с атрибутом switch: iOS 17.4+ отдаёт на него системный «тик». 18.09: раньше он стоял
+       за экраном (left:-9999px) — Safari тактильный отклик для невидимых элементов не даёт.
+       Теперь он в потоке страницы, размером 1 пиксель и прозрачный. Если тика всё равно нет,
+       проверь на телефоне: Настройки → Звуки, тактильность → Системная тактильная отдача. -->
+  <label style="position:absolute;width:1px;height:1px;opacity:.01;pointer-events:none" aria-hidden="true"><input type="checkbox" switch id="haptSw"></label>
+  <div id="live" class="hidden" style="display:none;flex-direction:column;gap:12px">
+    <button id="ptt">🎤 ГОВОРИТЬ<br><small>микрофон выключен</small></button>
+    <div id="micModeRow" style="display:flex;gap:8px">
+      <button id="mmOpen" style="flex:1;min-height:60px;padding:8px 6px;background:#1e8449">🙌 СВОБОДНЫЕ РУКИ<br><small>слушает сам, всегда</small></button>
+      <button id="mmToggle" style="flex:1;min-height:60px;padding:8px 6px;background:#555">👆 ПО КНОПКЕ<br><small>слушает только после «ГОВОРИТЬ»</small></button>
+    </div>
+    <!-- 18.09: оператор должен ВИДЕТЬ, что робот расслышал, до того как жать ОТВЕЧАЙ.
+         Раньше это уходило только в мелкий лог внизу, и в зале было не разобрать,
+         молчит он потому что не услышал, или потому что ход гостя не закрылся. -->
+    <div id="lastHeard" style="font-size:14px;line-height:1.35;color:#cfd6df;background:#20242c;
+         border-radius:10px;padding:9px 11px;min-height:38px">услышал: <b style="color:#8a8f98">— пока ничего —</b></div>
+    <button id="answerNow" style="min-height:64px;background:#b8860b;touch-action:manipulation">⏭ ОТВЕЧАЙ<br><small>ответит на последние слова гостя</small></button>
+    <button id="stopTalk" style="background:#8e2020;min-height:64px;touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none">✋ ХВАТИТ<br><small>замолчи сейчас · связь жива, нажми ещё раз — снова слушает</small></button>
+    <button id="hushBtn2" style="background:#5a1616;min-height:56px;touch-action:manipulation">⏹ ПОЛНЫЙ СТОП<br><small>связь разорвана, деньги не идут · дальше — «Подключиться»</small></button>
+
+    <!-- РЕЖИССЁР: в уличных пультах эту карточку прятали — на ходу печатать
+         некогда, режиссировали голосом. BoS-Bot стоит на сцене стационарно —
+         объявления печатаются заранее, поэтому карточка здесь ВИДНА. Канал тот
+         же ⟦REGIE⟧, на нём же держатся кнопки быстрых действий (mdEmpf/mdHafen/mdHalle/mdFuehr/mdFest/qa*). -->
+    <div class="card hidden" style="display:none"><!-- 14.09: спрятано — задания Макс даёт голосом по-русски -->
+      <label>📣 ОБЪЯВЛЕНИЕ / МОНОЛОГ — исполнит сразу (аудитория не слышит задание)</label>
+      <textarea id="dirInput" placeholder=""></textarea>
+      <button id="dirBtn" disabled>📣 ОБЪЯВЛЕНИЕ / МОНОЛОГ</button>
+    </div>
+
+    <div class="card">
+      <label>Режим микрофона</label>
+      <select id="micMode">
+        <option value="toggle">🎤 Нажал — слушает, нажал ещё раз — отвечает</option>
+        <option value="open">📢 РУКИ СВОБОДНЫ — микрофон всегда открыт (как у поляков)</option>
+      </select>
+      <div id="levelRow" style="display:flex;align-items:center;gap:8px;margin-top:6px">
+        <span style="font-size:20px">🎙</span>
+        <div style="flex:1;height:14px;background:#222;border-radius:7px;overflow:hidden">
+          <div id="levelBar" style="height:100%;width:0%;background:#3a8f3a;transition:width .06s linear"></div>
+        </div>
+        <span id="levelTxt" class="hint" style="min-width:96px;text-align:right">микрофон закрыт</span>
+      </div>
+
+      <details style="margin-top:4px">
+        <summary>🔧 Звук — тонкая настройка (обычно не нужна)</summary>
+        <div style="display:flex;flex-direction:column;gap:9px;margin-top:8px">
+          <label>Какой микрофон слушать</label>
+          <select id="micDevice">
+            <option value="">по умолчанию (что выберет телефон)</option>
+          </select>
+          <p class="hint" id="micHint">Если воткнута петличка (Lark, DJI) — выбери её здесь.</p>
+
+          <button id="micRetry" class="ghost">🔄 Переподключить микрофон</button>
+
+          <details>
+            <summary>⚙️ Совсем техническое — работает, не трогай</summary>
+            <div style="display:flex;flex-direction:column;gap:9px;margin-top:8px">
+              <div id="outRow" class="hidden">
+                <label>Куда выводить звук</label>
+                <select id="outDevice">
+                  <option value="">по умолчанию (что выберет телефон)</option>
+                </select>
+              </div>
+              <label>Способ связи</label>
+              <select id="connMode">
+                <option value="webrtc">Обычный (WebRTC) — быстрее</option>
+                <option value="websocket">Для петлички (WebSocket) — можно навязать внешний микрофон</option>
+              </select>
+            </div>
+          </details>
+        </div>
+      </details>
+      <button id="quietBtn" class="hidden" style="display:none"></button>
+      <button id="hushBtn" class="hidden" style="display:none"></button>
+    </div>
+
+    <div class="card">
+      <label>⚡ Быстрые действия — скажет сразу</label>
+      <div style="font-size:13px;color:#9aa4b0;margin:-2px 0 8px;line-height:1.45">
+        Задание — голосом: <b>«я оператор, даю задание…»</b> — или текстом
+        в «ЗАДАНИЕ / КОНТЕКСТ» ниже, выполнит сразу. Начало разговора — <b>🗣 Заговорить первым</b>.
+        Гость сказал, а робот молчит — <b>⏭ ОТВЕЧАЙ</b>. Микрофон не расслышал — <b>👤 ГОСТЬ СКАЗАЛ</b>.
+      </div>
+      <!-- 18.09: кнопки режимов убраны — контекст даётся голосом.
+           25.09: вместе с ними убран и их пустой контейнер — он оставался незакрытым,
+           и все карточки ниже (задание, «гость сказал», журнал) вкладывались в эту. -->
+
+      <div class="quick">
+        <button id="qaHello">🗣 Заговорить первым</button>
+        <button id="qaAnswer" class="hidden" style="display:none">⏭ ОТВЕЧАЙ</button><!-- 14.09: дубль спрятан, большая ОТВЕЧАЙ вверху -->
+        <button id="qaBye">👋 Завершить</button>
+      </div>
+    </div>
+
+    <div class="card hidden" style="display:none"><!-- 14.09: ЗАМОК спрятан по просьбе Макса -->
+      <button id="lockBtn" style="width:100%;background:#444">🔒 ЗАМОК — не реагировать на касания</button>
+    </div>
+
+    <!-- Физические кнопки СПРЯТАНЫ 26.08: устройства, которое бы с ними
+         работало, у Макса нет — брелок HBTR003-X айфон клавиатурой не считает,
+         а кликер с USB-приёмником некуда воткнуть (гнездо занято микрофоном).
+         Разметку не удаляю: придёт новая клавиатура — снять hidden и вернуть
+         ловлю нажатий из backups/2026-08-25-ПЕРЕД-ОТКАТОМ-ФИЗКНОПОК/. -->
+    <div class="card hidden" style="display:none">
+      <label>🎛 Физические кнопки (Bluetooth)</label>
+      <div id="klavList"></div>
+      <div id="lastKey" class="hint"></div>
+    </div>
+
+    <div class="card hidden" style="display:none">
+      <label>🔊 Точные фразы — слово-в-слово</label>
+      <div class="board" id="board"></div>
+      <details>
+        <summary>➕ Добавить точную фразу (аудиофайл)</summary>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+          <input id="clipLabel" placeholder="Название кнопки (напр. Слоган Samsung)">
+          <input id="clipFile" type="file" accept="audio/*">
+          <button class="ghost" id="addClip">Добавить</button>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <label>📩 ЗАДАНИЕ / КОНТЕКСТ — пиши по-русски, выполнит сразу</label>
+      <div style="font-size:13px;color:#9aa4b0;margin:-2px 0 6px;line-height:1.45">
+        Как есть, своими словами: <b>где стоим, кто перед роботом, что сделать или сказать</b>.
+        Уйдёт сразу, робот сыграет это по-нидерландски, гости задание не услышат.
+        То же самое голосом: «<b>я оператор, даю задание…</b>».
+      </div>
+      <textarea id="ctxInput" placeholder="напр.: перед тобой медсестра в синей форме, поздоровайся и спроси, что она тут тестирует"></textarea>
+      <button id="sendCtx">📩 Выполнить сейчас</button>
+      <!-- В пульте-источнике этот контейнер оставался скрытым намертво (display:none
+           нигде не снимался) — быстрые кнопки контекста рисовались, но их никто
+           не видел. Для BoS-Bot они центральная часть задания 3, поэтому видимые. -->
+      <div class="quick" id="quickCtx"></div>
+    </div>
+
+    <!-- СПРЯТАНО 13.09: голый sendUserMessage без токена — робот принимал русский
+         пересказ за русскоговорящего гостя (08.09). Вместо него поле „👤 ГОСТЬ
+         СКАЗАЛ" (⟦GAST⟧). Вернуть — убрать hidden. -->
+    <!-- 👤 ГОСТЬ СКАЗАЛ — на случай, если микрофон робота гостя не расслышал:
+         оператор печатает (можно по-русски), робот отвечает гостю по-немецки.
+         Урок с визита к старшим 08.09: там микрофон гостей не слышал вовсе,
+         и без такого поля оператору нечем было заткнуть дыру. -->
+    <div class="card">
+      <label>👤 ГОСТЬ СКАЗАЛ — прочитает и ответит</label>
+      <textarea id="gastInput" placeholder="Что сказал или спросил человек — по-русски. Робот ответит ему по-нидерландски, на вопрос — прямо"></textarea>
+      <div class="row">
+        <button id="gastMic" style="flex:0 0 56px" title="Надиктовать по-русски"></button>
+        <button id="gastBtn">👤 ГОСТЬ СКАЗАЛ → ответь</button>
+      </div>
+    </div>
+
+    <div class="card hidden" style="display:none">
+      <label>🗣 Сказать ЗА гостя</label>
+      <textarea id="sayInput" placeholder="напр. Wo hast du dein rotes T-Shirt gekauft? · для стрима: Marius schreibt: ..."></textarea>
+      <div class="row">
+        <button id="sayMic" class="hidden" style="display:none"></button>
+        <button id="sayBtn">🗣 Отправить</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <button id="stopBtn" class="hidden" style="display:none">⏹ Завершить</button><!-- 18.09: дубль ПОЛНОГО СТОПА -->
+    </div>
+
+    <div class="card hidden" style="display:none">
+      <label>Журнал</label>
+      <div id="lockScreen" class="hidden" style="position:fixed;inset:0;z-index:9999;
+  background:#000d;display:flex;align-items:center;justify-content:center;flex-direction:column;
+  color:#eee;font-size:18px;text-align:center;padding:24px">
+  <div>🔒 Экран заперт</div>
+  <div style="font-size:14px;opacity:.7;margin-top:10px">Физические кнопки работают.<br>Держи палец три секунды, чтобы отпереть.</div>
+  <div id="lockHold" style="margin-top:22px;width:150px;height:150px;border-radius:50%;
+    border:3px solid #666;display:flex;align-items:center;justify-content:center;font-size:15px">держи</div>
+</div>
+<div id="log"></div>
+    </div>
+  </div>
+
+<script type="module">
+// ===== НАСТРОЙКА РОБОТА — для нового заказчика править ТОЛЬКО этот блок =====
+// Всё остальное в файле читает ROBOT и само по себе не содержит ничего
+// специфичного для BoS-Bot. Копия под нового заказчика: новая папка/репозиторий,
+// новый префикс ns (см. предупреждение ниже), свой agent, свои режимы и кнопки.
+const ROBOT = {
+  ns: 'vivesbot:',                               // префикс памяти браузера — СВОЙ у каждого пульта (домен GitHub Pages общий)
+  agent: 'agent_0201m3b6s54vej0s44wmx1nc8hkr',  // мозг Vives-bot (deploy_robot.py --robot vives), говорит по-нидерландски
+  title: 'Vives-bot · Брюгге',
+  version: '25.09.2026 Vives-bot',
+  dayCtx: 'Vrijdag 25 september 2026, Brugge, Hogeschool Vives, Zorglab. Een filmploeg maakt de film van het Zorglab voor het Digital Health Platform. Je spreekt vandaag Nederlands.',
+
+  // Копия пульта Максимилиана v «25.09 одна кнопка» (решение Макса: пульт — копия лучшего готового).
+  // Режимов и быстрых кнопок нет: задание Макс даёт голосом «я оператор…» или текстом в «ЗАДАНИЕ».
+  defaultMode: null,
+  modes: {},
+  quick: {},
+
+  // Служебные тексты — уходят по каналу ⟦REGIE⟧. Везде явно «auf Niederländisch»: команды
+  // немецкие, а говорить робот должен по-нидерландски.
+  answerCue: '⟦REGIE⟧ ОТВЕЧАЙ. Antworte JETZT auf Niederländisch auf die letzten Worte des Gastes seit deiner letzten Antwort. '
+           + 'Hat der Gast seit deiner letzten Antwort nichts Verständliches gesagt: erfinde nichts, begrüße nicht neu, fang kein neues Thema an — '
+           + 'sag in EINEM kurzen Satz, dass du ihn bei dem Lärm nicht verstanden hast, und bitte ihn, es noch einmal zu sagen.',
+  hello:  'Sprich als Erster, auf Niederländisch, KURZ: ein Gruß, dein Name und eine einfache Frage an den Menschen vor dir. Zwei Sätze.',
+  louder: 'Du hast den Gast nicht verstanden. Bitte kurz und freundlich auf Niederländisch, es noch einmal zu sagen.',
+  bye:    'Verabschiede dich jetzt auf Niederländisch mit einem kurzen, freundlichen Satz.',
+  ctxCue: 'Aufgabe oder Lage von deinem Team (meist auf Russisch getippt) — setz sie JETZT um, deine ersten Worte sind schon die Szene, auf NIEDERLÄNDISCH, ohne Bestätigung:',
+};
+document.title = 'Пульт ' + ROBOT.title;
+try{ const h=document.querySelector('h1'); if(h && ROBOT.version) h.insertAdjacentHTML('beforeend',' <small style="font-size:11px;opacity:.6;font-weight:400">v '+ROBOT.version+'</small>'); }catch{}
+// ===== конец блока настройки =====
+
+// ПАМЯТЬ БРАУЗЕРА — ТОЛЬКО СВОЯ. Все пульты живут на одном домене
+// maxgerasimenko1998-ops.github.io, а localStorage общий на домен, а не на папку.
+// Поэтому пульты воровали друг у друга мозг и контекст дня: 29.08 и 05.09 пульт
+// съёмки подхватывал ID УЛИЧНОГО мозга, записанный уличным пультом, и весь
+// день говорил не тем роботом. Теперь каждый ключ с префиксом этого пульта (ROBOT.ns).
+// Ключ ElevenLabs один на аккаунт — он намеренно общий.
+const NS=ROBOT.ns;
+const LS={ get:k=>localStorage.getItem(k==='xiKey'?k:NS+k),
+            set:(k,v)=>localStorage.setItem(k==='xiKey'?k:NS+k,v),
+            del:k=>localStorage.removeItem(k==='xiKey'?k:NS+k) };
+// ВЕРСИЯ ЗАФИКСИРОВАНА НАМЕРЕННО (15.08.2026). Без номера CDN отдаёт самую
+// свежую сборку — а 1.18.0 вышла 14 августа, за три дня до эфира, и никем ещё
+// не обкатана. У самой ElevenLabs уже был случай, когда обновление вложенной
+// библиотеки ломало WebRTC. Поднимать версию — вручную и НЕ в день эфира,
+// с прогоном на живом агенте после.
+import { Conversation } from 'https://cdn.jsdelivr.net/npm/@elevenlabs/client@1.18.0/+esm';
+
+const $ = id => document.getElementById(id);
+
+// ГРОМКОСТЬ. conv.setVolume выше единицы не поднимается — это обычная громкость
+// аудио-элемента. Тихий голос на улице не слышно, поэтому выход робота
+// пропускается через усилитель WebAudio. 21.09: голос Jantosch «очень тихий».
+// ОТВЕЧАЙ ДЕРЖИТ МИКРОФОН ЗАКРЫТЫМ, пока робот не заговорит (24.09).
+// Разбор Вены: пока рядом кто-то говорит, сервер НЕ закрывает ход гостя — ждёт
+// конца речи. Старая кнопка закрывала микрофон на 0,4 с и открывала обратно, фон
+// тут же продолжал ход, и ответ приходил через 33–63 с (7 нажатий подряд). Живая
+// проверка через WebRTC: микрофон закрыт до начала ответа → ответ через 7 с и
+// ровно на слова гостя. Автоответ по тишине (переключатель) убран — одна кнопка.
+let otvechajDerzhit = false;          // после ОТВЕЧАЙ микрофон закрыт до начала ответа
+const OTVECHAJ_MAX_MS = 15000;        // страховка: дольше робот не молчит — вернуть слух
+let _gain=null, _ac=null, _ist=null;
+const USILENIE = 3.0;               // во сколько раз громче единицы
+function usilitZvuk(){
+  let el=null;
+  try{
+    el=[...document.querySelectorAll('audio')].find(a=>a.srcObject||a.src);
+    if(!el) return;
+    // 22.09: после ПЕРЕПОДКЛЮЧЕНИЯ у того же элемента новый поток. Раньше стоял
+    // флаг «уже усилен» — цепочка к новому потоку не строилась, а элемент
+    // оставался заглушённым, и звук пропадал совсем. Теперь помним сам поток.
+    const kluch = el.srcObject || el.src;
+    if(el._usilenKluch === kluch) return;
+    _ac = _ac || new (window.AudioContext||window.webkitAudioContext)();
+    if(_ac.state === 'suspended'){ try{ _ac.resume(); }catch{} }
+    try{ _ist?.disconnect(); }catch{}
+    try{ _gain?.disconnect(); }catch{}
+    if(el.srcObject){
+      _ist = _ac.createMediaStreamSource(el.srcObject);
+    } else {
+      if(el._istSozdan) return;            // createMediaElementSource можно звать один раз
+      _ist = _ac.createMediaElementSource(el); el._istSozdan = true;
+    }
+    _gain = _ac.createGain(); _gain.gain.value = USILENIE;
+    _ist.connect(_gain); _gain.connect(_ac.destination);
+    el._usilenKluch = kluch;
+    if(el.srcObject) el.muted = true;      // иначе звук пойдёт дважды
+    log('🔊 Усилитель включён: громче в '+USILENIE+' раза');
+  }catch(e){
+    // ГЛАВНОЕ: не оставить робота немым. Не вышло усилить — вернуть обычный звук.
+    try{ if(el){ el.muted=false; el._usilenKluch=null; } }catch{}
+    log('⚠️ Усилитель не включился, звук обычный: '+(e?.message||e));
+  }
+}
+const TAIL_MS = 350;      // "хвост" после речи робота (было 700 — гость успевал
+                          // начать фразу в ещё закрытый микрофон, 26.08)
+const TOGGLE_TIMEOUT = 15000; // авто-выкл микрофона в toggle-режиме
+let conv=null, wakeLock=null;
+let micWanted=false, agentSpeaking=false, boardPlaying=false;
+// «ТИХО»: сессия жива, но робот не слышит и сам не заговаривает. Нужно, когда
+// переставляют стулья или переодевают робота: раньше приходилось либо рвать
+// сессию (и настраивать заново), либо слушать, как он разговаривает с пустотой
+// (боевой опыт Эссена 04.08 — восемь реплик «я терпеливо ожидаю» подряд).
+let quiet=false;
+let tailTimer=null, toggleTimer=null;
+let userStopping=false, reconnectTimer=null;
+let sessionCfg=null;      // {agentId, overrides} для реконнекта
+let dayContextText='';    // сохранённый контекст дня
+let hiddenLog=[];         // отправленные скрытые контексты — для реплея после обрыва
+const HIDDEN_MAX=12;      // за 3 часа их накопились бы десятки и каждый реконнект гнал бы всё заново
+let pendingRegie=false;   // была ли команда режиссёра до обрыва
+
+function vibrate(ms){
+  try{ navigator.vibrate?.(ms); }catch{}
+  try{ $('haptSw')?.click(); }catch{}
+  // На айфоне вибрации у веб-страницы нет, а в зале нужен отклик, который видно
+  // не глядя на кнопку: весь экран коротко светлеет.
+  try{
+    const b=document.body; b.classList.add('flash');
+    clearTimeout(vibrate._t); vibrate._t=setTimeout(()=>b.classList.remove('flash'), 160);
+  }catch{}
+}
+// Видимый отклик кнопки: зелёная + надпись на 1.4 с, потом как было. ok=false — красная.
+function otklik(b, tekst, ok=true){
+  if(!b) return;
+  if(b._was==null) b._was=b.innerHTML;            // исходная надпись — один раз, даже если позвали дважды
+  b.classList.remove('otklik','otklik-net'); b.classList.add(ok?'otklik':'otklik-net');
+  b.innerHTML=(ok?'✅ ':'⚠️ ')+tekst;
+  clearTimeout(b._otk); b._otk=setTimeout(()=>{ b.classList.remove('otklik','otklik-net'); b.innerHTML=b._was; b._was=null; }, 1400);
+}
+
+// Хранилище переполняется от накопленных аудиоклипов. Без обёртки первая же
+// запись роняла бы весь обработчик «Подключиться» — и кнопка молча ничего не делала.
+function store(k,v){
+  try{ LS.set(k,v); return true; }
+  catch(e){ try{ log('⚠️ Память браузера переполнена — удали лишние точные фразы (долгое нажатие на кнопку клипа)'); }catch{}
+            return false; }
+}
+
+// ---- ЧАСЫ ----
+// Робот не видит часов и без подсказки не может сказать «läuft gerade / kommt
+// gleich» — время телефона уходит тихим контекстом: при подключении вместе с
+// режимом и контекстом дня, каждые 10 минут, пока связь жива, и хвостом к
+// любому режиму/скрытому контексту в момент отправки.
+function uhrzeit(){
+  const d=new Date();
+  const hh=String(d.getHours()).padStart(2,'0');
+  const mm=String(d.getMinutes()).padStart(2,'0');
+  return `Uhrzeit jetzt: ${hh}:${mm}.`;
+}
+let clockTimer=null;
+function clockStart(){
+  clearInterval(clockTimer);
+  clockTimer=setInterval(()=>{ if(conv){ try{ conv.sendContextualUpdate(uhrzeit()); }catch{} } }, 600000);   // 10 минут
+}
+function clockStop(){ clearInterval(clockTimer); clockTimer=null; }
+
+// ---- быстрые кнопки контекста — свои под каждый режим (ROBOT.quick) ----
+function renderQuick(){
+  const box=$('quickCtx'); if(!box) return;
+  box.innerHTML='';
+  const list=ROBOT.quick[modeKey]||[];
+  list.forEach(([label,text])=>{
+    const b=document.createElement('button'); b.textContent=label;
+    b.onclick=()=>{ $('ctxInput').value=text; vibrate(30); otklik(b,'в поле'); };
+    box.appendChild(b);
+  });
+}
+
+// ---- РЕЖИМЫ ----
+// Режим — это СТОЯЧИЙ контекст: промпт читает слово MODUS: ... Кнопка запоминает
+// выбор (ключ памяти 'mode' хранит НАЗВАНИЕ режима, не текст), поэтому после
+// обрыва связи режим уходит роботу заново (иначе он вернулся бы к дефолту
+// посреди сцены). Текст и подписи режимов правятся в ROBOT.modes.
+let modeKey = ROBOT.modes[LS.get('mode')] ? LS.get('mode') : ROBOT.defaultMode;
+let modeText = ROBOT.modes[modeKey]?.text || '';   // 18.09: режимов может не быть вовсе — без ?. здесь молча умирал весь пульт
+function pokazatMode(){
+  const m=$('mdNow'); if(!m) return;
+  const cur=ROBOT.modes[modeKey];
+  m.innerHTML='режим: <b>'+(cur?cur.label:'не задан')+'</b>';
+  for(const k in ROBOT.modes){ const b=$(ROBOT.modes[k].btn); if(b) b.style.outline=(k===modeKey)?'3px solid #f0c14b':''; }
+}
+for(const k in ROBOT.modes){
+  const cfg=ROBOT.modes[k], b=$(cfg.btn); if(!b) continue;
+  b.onclick=async()=>{
+    modeKey=k; modeText=cfg.text; store('mode',modeKey); pokazatMode(); renderQuick(); vibrate([35,25,35]);
+    if(conv){ try{ conv.sendContextualUpdate(modeText+' '+uhrzeit()); hiddenLog.push(modeText);
+        if(hiddenLog.length>HIDDEN_MAX) hiddenLog.shift();
+        log('🎛 Режим: '+cfg.label); }catch(e){ log('⚠️ Режим не ушёл: '+(e?.message||e)); } }
+    else { log('🎛 Режим запомнен: '+cfg.label+' — уйдёт при подключении'); }
+    otklik(b,'режим включён');
+  };
+}
+pokazatMode();
+renderQuick();
+
+// ---- саундборд: точные фразы (локальные аудиоклипы) ----
+let clips=[]; try{ clips=JSON.parse(LS.get('clips')||'[]'); }catch{}
+const boardAudio=new Audio();
+function renderBoard(){
+  const b=$('board'); b.innerHTML='';
+  if(!clips.length){ b.innerHTML='<p class="hint">Пока нет точных фраз. Добавь ниже.</p>'; }
+  clips.forEach((c,i)=>{
+    const btn=document.createElement('button'); btn.textContent='▶ '+c.label;
+    btn.onclick=()=>playClip(c);
+    btn.oncontextmenu=e=>{ e.preventDefault(); if(confirm('Удалить «'+c.label+'»?')){ clips.splice(i,1); store('clips',JSON.stringify(clips)); renderBoard(); } };
+    b.appendChild(btn);
+  });
+}
+let boardTimer=null, boardWatchdog=null;
+function releaseBoard(msg){
+  clearTimeout(boardTimer); clearTimeout(boardWatchdog);
+  boardPlaying=false; applyMic();
+  if(msg) log(msg);
+}
+function playClip(c){
+  // во время точной фразы микрофон закрыт (робот "говорит")
+  // таймеры прошлого клипа гасим — иначе старый хвост откроет микрофон посреди нового
+  clearTimeout(boardTimer); clearTimeout(boardWatchdog);
+  boardPlaying=true; applyMic(); vibrate(30);
+  boardAudio.src=c.data;
+  boardAudio.play().catch(()=>releaseBoard('⚠️ Клип не проигрался: '+c.label));
+  // предохранитель: если ни ended, ни error не придут — микрофон не должен залипнуть закрытым
+  boardWatchdog=setTimeout(()=>{ if(boardPlaying) releaseBoard('⚠️ Клип завис — микрофон разблокирован'); }, 60000);
+  log('🎬 '+c.label);
+}
+boardAudio.onended=()=>{
+  clearTimeout(boardTimer); clearTimeout(boardWatchdog);
+  boardTimer=setTimeout(()=>{ boardPlaying=false; applyMic(); }, TAIL_MS);
+};
+boardAudio.onerror=()=>releaseBoard('⚠️ Ошибка звука клипа');
+$('addClip').onclick=()=>{
+  const label=$('clipLabel').value.trim(); const f=$('clipFile').files[0];
+  if(!label||!f){ flash('⚠️ Нужны название и файл'); return; }
+  const r=new FileReader();
+  r.onload=()=>{ clips.push({label,data:r.result}); store('clips',JSON.stringify(clips)); $('clipLabel').value=''; $('clipFile').value=''; renderBoard(); };
+  r.readAsDataURL(f);
+};
+
+// ---- микрофон: предохранитель ----
+function applyMic(){
+  const ptt=$('ptt');
+  if(!conv){
+    if(paused){
+      ptt.classList.remove('live','locked');
+      document.body.classList.remove('s-listen','s-speak');
+      ptt.innerHTML='▶️ ПРОДОЛЖИТЬ<br><small>пауза — робот молчит и не слушает</small>';
+    }
+    return;
+  }
+  const open = micWanted && !quiet && !agentSpeaking && !boardPlaying && !dictating && !otvechajDerzhit;
+  try{ conv.setMicMuted(!open); }catch{}
+  ptt.classList.toggle('live', open);
+  ptt.classList.toggle('locked', micWanted && (agentSpeaking||boardPlaying));
+  document.body.classList.toggle('s-listen', open);
+  document.body.classList.toggle('s-speak', agentSpeaking||boardPlaying);
+  if(open) ptt.innerHTML='🔴 СЛУШАЮ<br><small>микрофон ВКЛЮЧЁН</small>';
+  else if(quiet) ptt.innerHTML='🤫 ТИХО<br><small>не слышит и сам не заговорит</small>';
+  else if(dictating) ptt.innerHTML='📝 НАДИКТОВКА<br><small>робот тебя сейчас НЕ слышит</small>';
+  else if(micWanted && (agentSpeaking||boardPlaying)) ptt.innerHTML='⏸ ЖДУ<br><small>робот говорит — микрофон закрыт</small>';
+  else if(otvechajDerzhit) ptt.innerHTML='⏳ ОТВЕЧАЕТ<br><small>слушание закрыто до его ответа — так и надо</small>';
+  else ptt.innerHTML='🎤 ГОВОРИТЬ<br><small>микрофон выключен</small>';
+}
+function setWanted(v){
+  // Отпустили кнопку разговора = мы только что говорили и ЖДЁМ ответа.
+  // Без этого пинг «оператор здесь» просил сервер придержать реплику —
+  // и в режиме «Держи и говори» ответа не было вовсе (01.08).
+  if(!v && micWanted && conv) expectReply();
+  micWanted=v; vibrate(v?40:20); applyMic();
+  armToggleTimeout();
+}
+// Микрофон в режиме «нажал — слушает» гас ровно через 15 секунд ПОСЛЕ НАЖАТИЯ,
+// даже если человек в этот момент говорил. Гость договаривал в закрытый вход,
+// робот молчал, и на записи 25.08 люди спрашивали «Hörst du uns?» (фидбек Макса
+// 26.08: «микрофон иногда не воспринимался»). Теперь отсчёт идёт от ПОСЛЕДНЕГО
+// звука на входе: пока говорят — микрофон живёт, тишина 15 секунд — гаснет.
+function armToggleTimeout(){
+  clearTimeout(toggleTimer);
+  if(micWanted && micMode()==='toggle'){
+    toggleTimer=setTimeout(()=>{
+      micWanted=false; applyMic(); vibrate([30,60,30]);
+      log('⏱ Микрофон авто-выключен — 15 секунд тишины');
+    }, TOGGLE_TIMEOUT);
+  }
+}
+
+// ---- полоска громкости ----
+// Единственный способ увидеть ГЛАЗАМИ, что микрофон живой, до того как робот
+// промолчит в ответ. Уровень берём у самого SDK (getInputVolume): второй раз
+// открывать микрофон на iOS опасно — два захвата дерутся за один вход.
+let levelTimer=null, levelPeak=0, levelSilent=0, levelTick=0;
+let awaitingReply=false, awaitTimer=null;   // отправили задание/реплику — робот ДОЛЖЕН заговорить
+function expectReply(){
+  awaitingReply=true; clearTimeout(awaitTimer);
+  awaitTimer=setTimeout(()=>{ awaitingReply=false; }, 90000);  // страховка
+}
+function levelStart(){
+  clearInterval(levelTimer);
+  levelPeak=0; levelSilent=0;
+  levelTimer=setInterval(()=>{
+    const bar=$('levelBar'), txt=$('levelTxt');
+    if(!conv){ bar.style.width='0%'; txt.textContent='нет связи'; return; }
+    const open = micWanted && !agentSpeaking && !boardPlaying && !dictating;
+    // Микрофон закрыт НАМЕРЕННО (держу кнопку / надиктовка) — говорим серверу
+    // «оператор здесь», иначе робот через 20 сек сам лезет в тишину
+    // («Seid ihr noch da?» посреди надиктовки, поймано 31.07).
+    // В «руках свободных» с открытым микрофоном НЕ пингуем: там его попытки
+    // разговорить молчуна — нужное поведение.
+    // НЕ пингуем, когда робот говорит или должен вот-вот заговорить:
+    // user_activity просит его помолчать — и глушил ответ на задание (31.07)
+    if(++levelTick>=80){ levelTick=0;
+      if(!open && !agentSpeaking && !boardPlaying && !awaitingReply){ try{ conv.sendUserActivity?.(); }catch{} } }
+    if(!open){
+      bar.style.width='0%'; bar.style.background='#444';
+      txt.textContent = dictating ? 'надиктовка — робот не слышит' : (agentSpeaking||boardPlaying ? 'робот говорит' : 'микрофон закрыт');
+      levelSilent=0; return;
+    }
+    let v=0;
+    try{ v=conv.getInputVolume?.() ?? 0; }catch{}
+    const pct=Math.min(100, Math.round(v*100*3));      // *3 — иначе речь еле видна
+    // 18.09: полоска «постоянно шумела» даже в тишине. Причина не в микрофоне —
+    // пик гас слишком медленно (0,94 за 100 мс ≈ три секунды после каждого звука),
+    // и в зале она не успевала опуститься. Журналы это подтверждают: за все дни
+    // у стариков и на BoS сервер НИ РАЗУ не принял шум за реплику гостя — пустых
+    // реплик ноль. Гасим быстрее и считаем тишиной всё, что ниже 6 %.
+    levelPeak=Math.max(levelPeak*0.75, pct);
+    bar.style.width=levelPeak+'%';
+    bar.style.background = levelPeak>70 ? '#c8a020' : '#3a8f3a';
+    if(pct<6){
+      levelSilent++;
+      // 5 секунд полной тишины при открытом микрофоне = вход мёртвый,
+      // а не «человек молчит»: даже в тихой комнате шум даёт единицы процентов
+      txt.textContent = levelSilent>50 ? '⚠️ вход молчит — не тот микрофон?' : 'тихо';
+    } else { levelSilent=0; txt.textContent = pct>70 ? 'громко' : 'слышу';
+      armToggleTimeout();   // говорят — микрофон не гасим
+    }
+  }, 100);
+}
+function levelStop(){ clearInterval(levelTimer); levelTimer=null;
+  const b=$('levelBar'); if(b){ b.style.width='0%'; $('levelTxt').textContent='нет связи'; } }
+
+// ---- выбор микрофона ----
+// iOS сам решает, какой вход слушать, и внешнюю петличку берёт не всегда.
+// Названия устройств браузер показывает ТОЛЬКО после выданного разрешения,
+// поэтому список наполняем уже после подключения.
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+            || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+const IS_ANDROID = /Android/i.test(navigator.userAgent);
+
+// Слова, по которым узнаём внешний микрофон в названии устройства.
+// Список из живого опыта: петлички Lark/DJI, USB-приёмники, гарнитуры.
+const EXTERNAL_MIC = /lark|hollyland|dji|rode|usb|wired|headset|earphone|headphone|external|bluetooth|extern/i;
+const BUILTIN_MIC  = /iphone|built-?in|einge|телефон|phone mic|default/i;
+
+const micDeviceId = () => $('micDevice').value || undefined;
+const outDeviceId = () => $('outDevice')?.value || undefined;
+
+async function refreshMicList(){
+  if(!navigator.mediaDevices?.enumerateDevices) return;
+  let all=[];
+  try{ all=await navigator.mediaDevices.enumerateDevices(); }catch{ return; }
+  const ins=all.filter(d=>d.kind==='audioinput');
+  const outs=all.filter(d=>d.kind==='audiooutput');
+
+  const sel=$('micDevice'), keep=LS.get('micDeviceId')||'';
+  const keepLabel=LS.get('micDeviceLabel')||'';
+  sel.innerHTML='<option value="">по умолчанию (что выберет телефон)</option>';
+  ins.forEach((d,i)=>{
+    const o=document.createElement('option');
+    o.value=d.deviceId; o.textContent=d.label||`микрофон ${i+1}`;
+    sel.appendChild(o);
+  });
+  if(keep && ins.some(d=>d.deviceId===keep)) sel.value=keep;
+  else if(keepLabel){
+    // iOS выдаёт микрофонам НОВЫЕ номера при каждой загрузке страницы —
+    // сохранённый номер протухает, и выбор молча слетал на встроенный
+    // (поймано 31.07: «руки свободны, а он меня не слышит»). Имя стабильно.
+    const m=ins.find(d=>(d.label||'')===keepLabel);
+    if(m){
+      sel.value=m.deviceId; store('micDeviceId',m.deviceId);
+      log('🎙 Вернул твой микрофон: '+keepLabel);
+      if(conv) conv.changeInputDevice({inputDeviceId:m.deviceId})
+        .then(()=>log('🎙 Микрофон применён: '+keepLabel)).catch(()=>{});
+    }
+  }
+
+  // Вывод звука: на Андроиде список живой, на айфоне система его не отдаёт.
+  const canPickOutput = outs.length>0 && ('setSinkId' in HTMLMediaElement.prototype || IS_ANDROID);
+  $('outRow').classList.toggle('hidden', !canPickOutput);
+  if(canPickOutput){
+    const os=$('outDevice'), okeep=LS.get('outDeviceId')||'';
+    os.innerHTML='<option value="">по умолчанию (что выберет телефон)</option>';
+    outs.forEach((d,i)=>{
+      const o=document.createElement('option');
+      o.value=d.deviceId; o.textContent=d.label||`выход ${i+1}`;
+      os.appendChild(o);
+    });
+    if(okeep && outs.some(d=>d.deviceId===okeep)) os.value=okeep;
+  }
+
+  // Подсказка по платформе — чтобы не искать то, чего в системе нет
+  const ext=ins.filter(d=>EXTERNAL_MIC.test(d.label||'') && !BUILTIN_MIC.test(d.label||''));
+  const hint=$('micHint');
+  if(IS_IOS && ins.length<=1){
+    hint.innerHTML='⚠️ <b>Айфон отдаёт браузеру только встроенный микрофон</b> — это ограничение Safari, петличка тут не появится. Работай так: телефон на себе, колонка на роботе. Для петлички нужен Андроид.';
+  } else if(ext.length){
+    hint.innerHTML=`✅ Внешний микрофон найден: <b>${ext[0].label}</b>. Если он не выбран — выбери его в списке выше.`;
+    // сам не переключаю: молча подменённый вход — худший вид сюрприза на ивенте
+  } else {
+    hint.textContent='Если воткнута петличка (Lark, DJI) — выбери её здесь. Пока внешних микрофонов не видно.';
+  }
+  log(`🎙 Микрофонов: ${ins.length}${ext.length?' (внешний: '+ext[0].label+')':''} · выходов: ${outs.length}`);
+}
+
+$('outDevice').onchange=async()=>{
+  store('outDeviceId',$('outDevice').value);
+  const name=$('outDevice').selectedOptions[0]?.textContent||'по умолчанию';
+  if(!conv){ log('🔊 Выход выбран: '+name); return; }
+  try{ await conv.changeOutputDevice({outputDeviceId:outDeviceId()}); log('🔊 Выход переключён: '+name); }
+  catch(e){ log('⚠️ Выход переключить не вышло: '+(e?.message||e)); }
+};
+$('micDevice').onchange=async()=>{
+  store('micDeviceId',$('micDevice').value);
+  store('micDeviceLabel', $('micDevice').value ? ($('micDevice').selectedOptions[0]?.textContent||'') : '');
+  const name=$('micDevice').selectedOptions[0]?.textContent||'по умолчанию';
+  if(!conv){ log('🎙 Микрофон выбран: '+name); return; }
+  try{ await conv.changeInputDevice({inputDeviceId:micDeviceId()}); log('🎙 Микрофон переключён: '+name); }
+  catch(e){ log('⚠️ Не вышло переключить микрофон: '+(e?.message||e)); }
+};
+// ---- способ связи ----
+const connMode = () => $('connMode').value;
+$('connMode').value = LS.get('connMode') || 'webrtc';
+$('connMode').onchange = ()=>{
+  store('connMode', connMode());
+  log(connMode()==='websocket'
+    ? '🔌 Способ связи: WebSocket (навязываем внешний микрофон) — переподключись'
+    : '🔌 Способ связи: WebRTC — переподключись');
+};
+
+// ---- «пинок» аудиосессии (iOS) ----
+// На iOS Safari сам микрофон не выбирает: он отдаёт маршрут системе, а deviceId
+// внутри превращается в setPreferredInput — подсказку, которую iOS вправе
+// проигнорировать. Известный обход: захватить микрофон в режиме 'auto', и лишь
+// ПОСЛЕ этого переключить сессию в 'play-and-record' — тогда iOS перемаршрутизирует
+// вход на гарнитуру. Порядок принципиален: сделать это ДО захвата — 50/50, что
+// останешься на встроенном микрофоне.
+function audioSessionSet(type, why){
+  try{
+    if(!navigator.audioSession) return false;
+    navigator.audioSession.type = type;
+    if(why) log(`🎚 Аудиосессия: ${type} (${why})`);
+    return true;
+  }catch(e){ return false; }
+}
+async function iosKick(){
+  if(!IS_IOS || !navigator.audioSession) return;
+  await new Promise(r=>setTimeout(r, 350));      // дать захвату устояться
+  audioSessionSet('play-and-record','пинок маршрута');
+}
+
+async function reacquireMic(why){
+  if(!conv){ log('🎙 '+why+': связи нет, нечего переустанавливать'); return; }
+  try{
+    audioSessionSet('auto');                     // пинок работает только в паре
+    await conv.changeInputDevice({inputDeviceId:micDeviceId()});
+    log('🎙 Вход переустановлен ('+why+')');
+    await iosKick();
+  }catch(e){ log('⚠️ Вход переустановить не вышло: '+(e?.message||e)); }
+}
+// Микрофон, воткнутый ПОСРЕДИ разговора, сам себя не подхватывает: WebRTC держит
+// ту дорожку, что захватил при старте. Поймано вживую 29.07 — Макс воткнул
+// петличку, звук в колонке шёл дальше, а слушал по-прежнему встроенный микрофон
+// и реагировал на собственную колонку. Поэтому пересобираем вход принудительно.
+navigator.mediaDevices?.addEventListener?.('devicechange', async()=>{
+  await refreshMicList();
+  reacquireMic('устройства изменились');
+});
+$('micRetry').onclick=()=>reacquireMic('вручную');
+
+// ---- режим микрофона ----
+const micMode = () => $('micMode').value;
+// осталось два режима; сохранённый «toggle» со старых версий превращаем в hold
+$('micMode').value = (LS.get('micMode')==='toggle') ? 'toggle' : 'open';   // 14.09: по умолчанию РУКИ СВОБОДНЫ — с пустой памятью пульт падал в «по кнопке» и гас через 15 с
+$('micMode').onchange=()=>{
+  // Сессию НЕ трогаем: переключение режима на живом разговоре роняло связь
+  // (01.08). Просто меняем состояние микрофона.
+  clearTimeout(toggleTimer);
+  const m=micMode();
+  store('micMode', m);
+  micWanted = (m==='open') && !!conv;
+  vibrate(30); applyMic();
+  log(m==='open' ? '📢 Руки свободны — микрофон открыт' : '🎤 Держи и говори — жми большую кнопку');
+  refreshMicModeBtns();
+};
+// 14.09: режим микрофона — двумя большими кнопками под ГОВОРИТЬ, а не селектом в «тонкой настройке»
+function refreshMicModeBtns(){
+  const m=micMode(); const o=$('mmOpen'), t=$('mmToggle'); if(!o||!t) return;
+  o.style.outline = m==='open' ? '3px solid #fff' : 'none';   o.style.opacity = m==='open' ? '1' : '0.5';
+  t.style.outline = m==='toggle' ? '3px solid #fff' : 'none'; t.style.opacity = m==='toggle' ? '1' : '0.5';
+}
+$('mmOpen').onclick=()=>{ $('micMode').value='open'; $('micMode').onchange(); otklik($('mmOpen'),'руки свободны'); };
+$('mmToggle').onclick=()=>{ $('micMode').value='toggle'; $('micMode').onchange(); otklik($('mmToggle'),'по кнопке'); };
+refreshMicModeBtns();
+
+// ---- ЗАТКНИСЬ: мгновенно глушим звук, сессию НЕ рвём ----
+// Публичного interrupt() в SDK нет (в WebRTC он вообще no-op), setVolume срабатывает за ~3 мс.
+let hushed=false;
+// ⏹ СТОП — одна кнопка вместо двух.
+// Просто глушить мало: сервер договаривает фразу до конца и жжёт токены.
+// Поэтому глушим МГНОВЕННО, следом рвём сессию (генерация останавливается)
+// и сразу переподключаемся — контекст дня и подсказки восстановятся сами.
+let stopping=false, paused=false, dictating=false;
+function hushMaybeRelease(){}   // защёлка больше не нужна: стоп рвёт сессию целиком
+async function hush(){
+  if(!conv||stopping) return;
+  stopping=true;
+  const btn=$('hushBtn');
+  try{ conv.setVolume({volume:0}); }catch{}       // тишина в ту же миллисекунду
+  btn.textContent='⏳ Останавливаю…'; vibrate([80,50,80]);
+  log('⏹ Стоп — обрываю. ПАУЗА: продолжение — большой кнопкой');
+  clearTimeout(reconnectTimer); reconnectTimer=null;
+  clockStop();
+  // Раньше СТОП сам переподключался — и робот тут же оживал: открывал
+  // микрофон в «руках свободных» и выдавал вступительную реплику на
+  // восстановленный контекст. Макс (31.07): «стоп не помогает, он опять
+  // продолжает». Теперь СТОП = полная тишина до нажатия ПРОДОЛЖИТЬ.
+  paused=true;
+  try{ await conv.endSession(); }catch{}
+  conv=null; hushed=false; agentSpeaking=false; micWanted=false;
+  quiet=false; quietUI();      // СТОП сильнее «тихо»: после ПРОДОЛЖИТЬ всё как обычно
+  document.body.classList.remove('s-listen','s-speak');
+  btn.textContent='⏹ СТОП — замолчать';
+  stopping=false;
+  applyMic();
+}
+async function resume(){
+  if(conv||connecting) return;
+  $('ptt').innerHTML='⏳ Подключаю…';
+  log('▶️ Продолжаю после паузы');
+  await doConnect(true);
+}
+function unhush(){ hushed=false; }
+$('hushBtn').onclick=hush;
+$('hushBtn2')?.addEventListener('click', ()=>{ vibrate([90,60,90]); hush(); });
+
+// ✋ ХВАТИТ — одна кнопка вместо «тихо» и «стоп».
+// Коротко: мгновенная тишина в колонке, вход закрыт, сессия ЖИВА — пинги
+// «оператор здесь» не дают роботу заговорить самому. Продолжить — «ГОВОРИТЬ».
+// Держать 2 секунды: полный обрыв связи, как раньше делал СТОП.
+(function(){
+  const b=$('stopTalk'); if(!b) return;
+  let t=null, dolgo=false;
+  function korotko(){
+    if(!conv) return;
+    try{ conv.setVolume({volume:0}); }catch{}
+    setWanted(false);
+    if(!quiet) setQuiet(true);
+    vibrate([60,40,60]);
+    log('✋ Хватит — молчит и не слушает. Продолжить — «ГОВОРИТЬ»');
+    // РАНЬШЕ звук возвращался ровно через 1,5 секунды — и речь продолжалась
+    // с того места, где её застали. Именно поэтому кнопка казалась мёртвой
+    // (поймано Максом 26.08). Теперь ждём, пока робот реально договорит.
+    zhdatKoncaRechi();
+  }
+  // Длинное нажатие на телефоне ненадёжно: браузер перехватывает его своим
+  // меню выделения и до страницы оно не доходит (поймано Максом 23.08).
+  // Поэтому полный обрыв — отдельной видимой кнопкой, а тут простой клик.
+  // 21.09: ХВАТИТ — ПЕРЕКЛЮЧАТЕЛЬ. Раньше он только глушил, а выйти из тишины
+  // было нечем: кнопка «ТИХО» спрятана, а ГОВОРИТЬ в режиме свободных рук
+  // молчания не снимала — экран выглядел мёртвым. Теперь второе нажатие
+  // возвращает слух и звук.
+  function obratno(){
+    setQuiet(false);
+    try{ conv?.setVolume({volume:1}); }catch{}
+    vibrate(40);
+    log('🔊 Снова слушает — ХВАТИТ отжат');
+  }
+  b.addEventListener('click', e=>{ e.preventDefault(); if(quiet) obratno(); else korotko(); });
+  // надпись на кнопке всегда говорит, что будет по нажатию
+  window._hvatitUI = () => {
+    b.innerHTML = quiet
+      ? '🔊 ПРОДОЛЖИТЬ<br><small>сейчас молчит — нажми, чтобы снова слушал</small>'
+      : '✋ ХВАТИТ<br><small>замолчи сейчас · связь жива, нажми ещё раз — снова слушает</small>';
+    b.style.background = quiet ? '#2e7d32' : '#8e2020';
+  };
+  window._hvatitUI();
+})();
+
+// Держим звук выключенным, пока агент не замолчит: проверяем каждые 300 мс,
+// на всякий случай не дольше 30 секунд.
+function zhdatKoncaRechi(){
+  clearInterval(zhdatKoncaRechi._t);
+  const nachalo = performance.now();
+  zhdatKoncaRechi._t = setInterval(()=>{
+    const dogovoril = !agentSpeaking;
+    const pora = performance.now() - nachalo > 30000;
+    if(dogovoril || pora){
+      clearInterval(zhdatKoncaRechi._t);
+      try{ conv?.setVolume({volume:1}); }catch{}
+    }
+  }, 300);
+}
+
+async function keepAwake(){
+  try{
+    wakeLock=await navigator.wakeLock?.request('screen');
+    // Систему никто не спрашивает: при энергосбережении или входящем звонке
+    // она забирает замок сама и молча. Раньше экран после этого гас посреди
+    // работы — именно того, ради чего замок и брали.
+    wakeLock?.addEventListener?.('release',()=>{ log('💤 Экран снова может гаснуть — восстанавливаю'); wakeLock=null; });
+  }catch{}
+}
+// Пока сети нет, попытки подключения жгутся впустую; когда вернулась —
+// раньше ждали истечения текущей выдержки вместо мгновенной попытки.
+window.addEventListener('offline',()=>{ log('📵 Интернет пропал'); });
+window.addEventListener('online',()=>{
+  log('📶 Интернет вернулся');
+  if(!conv && !connecting && !paused && sessionCfg){
+    clearTimeout(reconnectTimer); reconnectTimer=null; reconnectTries=0;
+    doConnect(true);
+  }
+});
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible') return;
+  if(!conv) return;
+  keepAwake();
+  // после блокировки экрана / звонка / переключения приложения iOS мог
+  // рассинхронизировать состояние микрофона — переустанавливаем принудительно
+  if(micMode()!=='open') micWanted=false;
+  applyMic();
+});
+
+// Agent ID НЕ зашит в страницу: она будет лежать в интернете, и любой, кто
+// узнает адрес, мог бы говорить с агентом за наши деньги. Вводится один раз.
+// Agent ID можно передать прямо в ссылке (?agent=agent_...) — удобно для
+// нового браузера или телефона: память-то у каждого своя. Из адреса сразу
+// убираем, чтобы ID не светился при показе экрана.
+// ЭТОТ ПУЛЬТ — ТОЛЬКО ДЛЯ BOS-BOT, и мозг у него свой (ROBOT.agent).
+// Раньше в других пультах поле было пустым, а ID подхватывался из памяти
+// браузера — и стоило один раз вписать туда чужого агента, он оставался там
+// навсегда, потому что память браузера ОБЩАЯ на весь домен GitHub Pages.
+// Теперь свой агент подставляется сам, а чужой пульт честно об этом говорит.
+const SVOJ_AGENT=ROBOT.agent;
+// 14.09: мозг берётся из ФАЙЛА (ROBOT.agent). Память телефона его больше не переопределяет —
+// иначе после смены мозга в файле телефон молча продолжает ходить в старый. ?agent=… в ссылке
+// действует только на этот запуск.
+let agentIzUrl='';
+try{
+  const qa=new URLSearchParams(location.search).get('agent');
+  if(qa && /^agent_[a-z0-9]+$/i.test(qa)){ agentIzUrl=qa; history.replaceState(null,'',location.pathname); }
+}catch{}
+$('agentId').value=agentIzUrl||SVOJ_AGENT;
+$('dayCtx').value=LS.get('dayCtx')||ROBOT.dayCtx;
+function log(l){ const e=$('log'); e.textContent+=l+'\n'; e.scrollTop=e.scrollHeight; }
+// НИКАКИХ alert(): Chrome предлагает «Dialogfelder unterdrücken», после чего
+// все окна молча исчезают навсегда — и пульт «просто не работает» (31.07).
+function flash(m){ const b=$('reconnBanner'); b.textContent=m; b.classList.remove('hidden');
+  clearTimeout(flash._t); flash._t=setTimeout(()=>b.classList.add('hidden'), 7000); }
+
+// Живая сессия должна быть РОВНО ОДНА. Сервер сам старую не закрывает, и две
+// параллельные = два робота говорят одновременно (поймано вживую 29.07: смена
+// аудиотракта при подключении микрофона моргнула связью, пульт переподключился,
+// и старая сессия осталась висеть — 264 и 277 секунд бок о бок).
+let connecting=false;
+async function doConnect(isReconnect){
+  if(connecting){ log('… подключение уже идёт, повтор пропущен'); return; }
+  if(!sessionCfg){ log('⚠️ Нечего подключать: настроек сессии ещё нет'); return; }
+  connecting=true; paused=false;
+  if(conv){ try{ await conv.endSession(); }catch{} conv=null; }
+  audioSessionSet('auto');   // захват начинаем в 'auto', пинок будет после
+  // Отвалившееся устройство (петличка выдернута, сел приёмник) оставляет в
+  // select битый deviceId — websocket-режим падает на нём ВСЕМИ попытками.
+  if(navigator.mediaDevices?.enumerateDevices){
+    try{
+      const cur=await navigator.mediaDevices.enumerateDevices();
+      if(micDeviceId() && !cur.some(d=>d.deviceId===micDeviceId())){ $('micDevice').value=''; log('🎙 Выбранный микрофон исчез — беру по умолчанию'); }
+      if(outDeviceId() && !cur.some(d=>d.deviceId===outDeviceId())){ $('outDevice').value=''; }
+    }catch{}
+  }
+  // ---- ПРОПУСК (пароль агента) ----
+  // Пока у агента нет пароля, хватает Agent ID — и кто узнает адрес пульта и ID,
+  // может говорить с роботом за наши деньги. С паролем сервер требует разовый
+  // подписанный пропуск, который выдаётся только по нашему ключу.
+  // Ключ живёт в телефоне и в кадр не попадает; вводится один раз, дальше молча.
+  // Лишнего ввода при старте НЕ добавляет.
+  let pass=null;
+  const key=$('apiKey').value.trim();
+  if(key){
+    const base='https://api.elevenlabs.io/v1/convai/conversation';
+    const wrtc=connMode()==='webrtc';
+    const url=(wrtc?`${base}/token?agent_id=`:`${base}/get-signed-url?agent_id=`)+encodeURIComponent(sessionCfg.agentId);
+    try{
+      const r=await fetch(url,{headers:{'xi-api-key':key}});
+      if(r.ok){
+        const d=await r.json();
+        pass = wrtc ? {conversationToken:d.token} : {signedUrl:d.signed_url};
+        log('🔑 Пропуск получен');
+      } else {
+        log('⚠️ Пропуск не выдан ('+r.status+') — пробую по Agent ID');
+      }
+    }catch(e){ log('⚠️ Пропуск не запросился: '+(e?.message||e)); }
+  }
+  try{
+    // Зависший (именно зависший, а не упавший) запрос на подключение — обычное
+    // дело на уличном LTE. Без таймаута `connecting` оставался бы true навсегда,
+    // автопереподключение блокировалось, и пульт молча замирал: помогала только
+    // перезагрузка страницы. Посреди эфира это провал.
+    let late=false;
+    const starting = Conversation.startSession({
+      ...(pass || {agentId: sessionCfg.agentId}),
+      inputDeviceId: micDeviceId(),   // пусто = как решит телефон
+      outputDeviceId: outDeviceId(),
+      connectionType: connMode(),
+      // Работает ТОЛЬКО в websocket-режиме: в webrtc SDK на эту опцию ругается.
+      // Ищет вход со словом earphone/headphone/airpod в названии — так iOS
+      // нередко подписывает петличку, воткнутую в порт.
+      preferHeadphonesForIosDevices: connMode()==='websocket' ? true : undefined,
+      overrides: sessionCfg.overrides,
+      onStatusChange:({status})=>{
+        const on=status==='connected';
+        $('connDot').classList.toggle('on',on);
+        $('connText').textContent=on?'подключено':status;
+        if(status==='disconnected') handleDisconnect();
+      },
+      onModeChange:({mode})=>{
+        const speaking=mode==='speaking';
+        if(speaking) awaitingReply=false;   // ответ пошёл — пинг снова можно
+        $('modeDot').classList.toggle('speak',speaking);
+        $('modeText').textContent=speaking?'робот говорит':'тишина';
+        clearTimeout(tailTimer);
+        hushMaybeRelease(speaking);
+        if(speaking){ agentSpeaking=true; otpustitOtvechaj(); applyMic(); }
+        else {
+          tailTimer=setTimeout(()=>{
+            agentSpeaking=false;
+            // в режиме «всегда открыт» микрофон сам возвращается после речи робота
+            // (но не в режиме «ТИХО» — там он остаётся закрытым намеренно)
+            if(micMode()==='open' && !quiet) micWanted=true;
+            applyMic();
+          }, TAIL_MS);
+        }
+      },
+      onMessage:({source,message})=>{
+        log((source==='ai'?'🤖 ':'🧑 ')+message);
+        if(source!=='ai'){
+          const t=(message||'').trim();
+          // команду пульта (служебный токен) в «услышал» не показываем — это не гость
+          if(t && !t.startsWith('\u27e6')){
+            const el=$('lastHeard');
+            if(el) el.innerHTML='услышал: <b style="color:#e8e8e8">'+t.replace(/[<>]/g,'')+'</b>';
+          }
+        }
+      },
+      // страховка на случай, если статус 'disconnected' однажды не долетит:
+      // без неё пульт остался бы с виду «подключено» при мёртвой сессии.
+      // Двойной вызов безопасен — handleDisconnect проверяет conv.
+      onDisconnect:()=>handleDisconnect(),
+      onError:e=>log('⚠️ '+(e?.message||e)),
+    });
+    // сессия, доехавшая ПОСЛЕ таймаута, никому не нужна — закрываем, иначе
+    // на сервере останется висеть второй робот (гонка 29.07)
+    starting.then(s=>{ if(late){ try{ s.endSession(); }catch{} } }).catch(()=>{});
+    conv = await Promise.race([ starting, new Promise((_,rej)=>setTimeout(()=>{
+      late=true; rej(new Error('сервер не ответил за 15 секунд'));
+    }, 15000)) ]);
+    setWanted(micMode()==='open' && !quiet); try{refreshDirButtons();}catch{}
+    refreshMicList();   // названия микрофонов видны только после разрешения
+    if(connMode()==='webrtc'){
+      // WebRTC-путь SDK игнорирует deviceId в startSession — применяем руками
+      if(micDeviceId()) try{ await conv.changeInputDevice({inputDeviceId:micDeviceId()}); }catch{}
+      if(outDeviceId()) try{ await conv.changeOutputDevice({outputDeviceId:outDeviceId()}); }catch{}
+    }
+    iosKick();          // пинок маршрута — ТОЛЬКО после захвата, иначе 50/50
+    levelStart();
+    // усилитель цепляем, когда SDK уже создал свой аудио-элемент
+    setTimeout(usilitZvuk, 800); setTimeout(usilitZvuk, 2500);
+    clearTimeout(reconnectTimer); reconnectTimer=null;   // висящий таймер добил бы живую сессию
+    try{ conv.setVolume({volume:1}); }catch{}   // страховка: СТОП глушил в ноль
+    reconnectTries=0;   // связь восстановилась — счётчик попыток сбрасываем
+    $('reconnBanner').textContent='🔄 Связь прервалась — переподключаюсь…';
+    $('reconnBanner').classList.add('hidden');
+    // (пере)отправляем режим, контекст дня, часы и все скрытые контексты
+    if(modeText){ try{ conv.sendContextualUpdate(modeText+' '+uhrzeit()); }catch{} }
+    else { try{ conv.sendContextualUpdate(uhrzeit()); }catch{} }
+    if(dayContextText){ conv.sendContextualUpdate('Du befindest dich gerade in folgender Lage: '+dayContextText
+        + ' — das ist deine eigene Wahrnehmung der Szene, keine Nachricht an dich.'); }
+    clockStart();
+    if(isReconnect){
+      // реплеим только тихий контекст. Режиссёрские команды НЕ повторяем:
+      // через sendContextualUpdate они превратились бы в молчаливую заметку
+      // вместо монолога — оператор бы решил, что всё восстановилось.
+      hiddenLog.forEach(t=>{ try{conv.sendContextualUpdate(t);}catch{} });
+      log('🔄 Переподключено, контекст восстановлен');
+      if(pendingRegie) log('⚠️ Задание режиссёра НЕ восстановлено — нажми «Дать задание» заново');
+      pendingRegie=false;
+    }
+    else { log('✅ Подключено'); log('🕒 часы включены'); }
+    keepAwake();
+  }catch(e){
+    const msg=String(e?.name||'')+' '+String(e?.message||e);
+    log('⚠️ Подключение не удалось: '+msg);
+    lastConnErr=msg;
+    // Нет доступа к микрофону — повторять бессмысленно, будет только сыпать
+    // запросами разрешения. Сразу говорим человеку, что делать.
+    if(/NotAllowed|Permission|denied|blocked/i.test(msg)){
+      // Chrome возвращает микрофон только по НАЖАТИЮ пальцем. Большая кнопка
+      // ▶️ ПРОДОЛЖИТЬ и есть это нажатие — по нему Chrome спросит разрешение
+      // заново. Раньше тут был каскад: окно → серый экран → только новая вкладка.
+      clearTimeout(reconnectTimer); reconnectTimer=null; reconnectTries=0;
+      paused=true; applyMic();
+      flash('🎤 Chrome забрал микрофон — жми большую кнопку ▶️ ПРОДОЛЖИТЬ');
+      log('🎤 Микрофон отобран браузером; жду нажатия ПРОДОЛЖИТЬ');
+      return;
+    }
+    // Пароль: без ключа переподключение будет падать бесконечно.
+    if(/authoriz|signed link|unauthorized|401/i.test(msg)){
+      clearTimeout(reconnectTimer); reconnectTimer=null; reconnectTries=0;
+      flash('🔑 Робот требует пропуск: впиши ключ ElevenLabs (sk_…) на первом экране');
+      log('🔑 Отказ по паролю — нужен ключ sk_…'); showSetup(); return;
+    }
+    if(!userStopping){ scheduleReconnect(); }
+    else { flash('⚠️ Не удалось подключиться: '+msg.slice(0,90)); showSetup(); }
+  }
+  finally{ connecting=false; }
+}
+function handleDisconnect(){
+  // doConnect сам закрывает старую сессию перед новой — её 'disconnected'
+  // не повод для реконнекта, иначе таймер убьёт СВЕЖУЮ сессию (гонка 30.07)
+  if(connecting){ conv=null; return; }
+  clockStop();   // связь оборвалась — часы гасим, doConnect включит их заново при успехе
+  if(otvechajDerzhit){ otvechajDerzhit=false; clearTimeout(otvechajTimer); answerBusy=false;
+    const ob=$('answerNow'); if(ob){ ob.disabled=false; if(otvechajBylo) ob.innerHTML=otvechajBylo; } }
+  if(paused){
+    // СТОП уже всё закрыл — «disconnected» от него не повод переподключаться
+    conv=null; agentSpeaking=false; boardPlaying=false; micWanted=false;
+    levelStop(); document.body.classList.remove('s-listen','s-speak');
+    applyMic(); return;
+  }
+  levelStop();
+  // Сессию, которую браузер считает мёртвой, сервер таковой НЕ считает: пока её
+  // не закрыть явно, она живёт и продолжает говорить. Закрываем перед реконнектом.
+  const dead=conv;
+  if(dead){ try{ dead.endSession(); }catch{} }
+  conv=null; agentSpeaking=false; boardPlaying=false; hushed=false;
+  clearTimeout(boardTimer); clearTimeout(boardWatchdog);
+  // без этого экран замирал в цвете момента обрыва — красный «слушаю» держался
+  // весь реконнект, хотя микрофона уже нет
+  micWanted=false; document.body.classList.remove('s-listen','s-speak');
+  $('hushBtn').classList.remove('arm');
+  if(userStopping){ showSetup(); return; }
+  $('reconnBanner').classList.remove('hidden'); vibrate([50,80,50]);
+  scheduleReconnect();
+}
+// Раньше долбил каждые 2 секунды ВЕЧНО. При мёртвой сети или запрещённом
+// микрофоне это заваливало экран запросами доступа и не давало понять,
+// что связи нет насовсем.
+let reconnectTries=0, lastConnErr='';
+const RECONNECT_MAX=6;
+function scheduleReconnect(){
+  if(reconnectTimer) return;   // попытка уже назначена — дубль от каскада 'disconnected' не плодим
+  if(reconnectTries>=RECONNECT_MAX){
+    log('🛑 Переподключиться не выходит. Проверь интернет и жми «Подключиться» заново.');
+    $('reconnBanner').textContent='🛑 Связи нет — нажми «Подключиться» заново';
+    vibrate([100,60,100,60,100]);
+    // показать ПРИЧИНУ крупно: по логу её никто не находит (Chrome iOS, 29.07)
+    if(lastConnErr){ log('🛑 Причина: '+lastConnErr); flash('🛑 Не подключается: '+lastConnErr.slice(0,110)); }
+    setTimeout(showSetup, 1500);
+    return;
+  }
+  const wait=Math.min(2000*Math.pow(2,reconnectTries), 30000);   // 2,4,8,16,30,30 сек
+  reconnectTries++;
+  $('reconnBanner').textContent=`🔄 Связь прервалась — попытка ${reconnectTries} из ${RECONNECT_MAX}…`;
+  reconnectTimer=setTimeout(()=>{ reconnectTimer=null; doConnect(true); }, wait);
+}
+
+$('connectBtn').onclick=async()=>{
+  const agentId=$('agentId').value.trim();
+  if(!agentId){ flash('⚠️ Вставь Agent ID'); return; }
+  if(agentId!==SVOJ_AGENT){ log('⚠️ ВНИМАНИЕ: это НЕ мозг '+ROBOT.title+'. Свой — …'+SVOJ_AGENT.slice(-8)+', сейчас стоит …'+agentId.slice(-8)); }
+  // Пароль у агента ВЫКЛЮЧЕН (21.08.2026, вечер) — без ключа тоже пускает.
+  store('agentId',agentId);
+  store('xiKey',$('apiKey').value.trim());
+  // Мозг один, никаких persona-overrides: агент целиком свой — промпт + База знаний.
+  sessionCfg={ agentId, overrides:undefined };
+  dayContextText=$('dayCtx').value.trim();
+  store('dayCtx', dayContextText);
+  hiddenLog=[]; userStopping=false;
+  $('connectBtn').disabled=true; $('connectBtn').textContent='Подключаюсь…';
+  showLive();
+  await doConnect(false);
+  $('connectBtn').disabled=false; $('connectBtn').textContent='▶️ Подключиться';
+};
+
+// ---- push-to-talk ----
+const ptt=$('ptt');
+const isHold=()=>false;                    // режима «держать» больше нет
+const isToggle=()=>micMode()==='toggle';   // нажал — слушает, нажал ещё раз — отвечает
+ptt.addEventListener('pointerdown',e=>{
+  e.preventDefault();
+  // без захвата указателя палец, соскользнувший с кнопки в толпе,
+  // не доставит pointerup — и микрофон остался бы открытым
+  try{ ptt.setPointerCapture(e.pointerId); }catch{}
+  if(!conv){ resume(); return; }   // из паузы/обрыва — сначала подключиться
+  if(isToggle()){
+    // Смысл режима: нажал — слушает, нажал ещё раз — сразу отвечает и
+    // дальше молчит. Отдельные кнопки «хватит-отвечай» и «тихо» не нужны.
+    if(micWanted){ setWanted(false); answerNow(); }
+    else { if(quiet) setQuiet(false); setWanted(true); }
+    return;
+  }
+  // 21.09: в режиме «руки свободны» тишину тоже надо снимать, иначе микрофон
+  // не откроется и кнопка выглядит сломанной.
+  if(quiet){ setQuiet(false); try{ conv?.setVolume({volume:1}); }catch{} setWanted(true); return; }
+  setWanted(!micWanted);
+});
+ptt.addEventListener('pointerup',e=>{ e.preventDefault(); if(isHold()) setWanted(false); });
+ptt.addEventListener('pointercancel',()=>{ if(isHold()) setWanted(false); });
+// страховка второго уровня: отпускание где угодно закрывает микрофон
+window.addEventListener('pointerup',()=>{ if(isHold()&&micWanted) setWanted(false); });
+window.addEventListener('blur',()=>{ if(isHold()&&micWanted) setWanted(false); });
+ptt.addEventListener('contextmenu',e=>e.preventDefault());
+
+// ---- ⏭ ХВАТИТ — ОТВЕЧАЙ ----
+// В толпе идеальная тишина не наступает НИКОГДА: люди шумят, говорят между
+// собой, комментируют — сервер не понимает, что гость закончил, и робот либо
+// молчит минутами, либо потом отвечает на самую первую фразу (боевой опыт
+// 2-4.08).
+// Форсировать ответ умеет только текстовая реплика (sendUserMessage). Но она
+// встаёт В ОЧЕРЕДЬ за незакрытой речью гостя — и сервер закрывает эту речь,
+// только когда в микрофон перестают говорить. Отсюда главное правило 24.09:
+// микрофон закрыт, пока робот не заговорит (см. ниже).
+// Если вокруг шумели и разобрать было нечего, робот раньше просто молчал —
+// оператор жал кнопку второй и третий раз и решал, что она мёртвая (26.08).
+// Поэтому у команды есть запасной выход: не понял — скажи короткую фразу и
+// задай короткий вопрос, но заговори обязательно.
+let answerBusy=false;
+// 18.09: переделано после боевой жалобы. Было: уходила ДЛИННАЯ команда-инструкция
+// ⟦REGIE⟧ «ответь сейчас; если ничего не слышал — скажи, что шумно, и попроси
+// повторить». Сервер принимал её как НОВУЮ реплику гостя, а живой транскрипт
+// ещё не был закрыт — и робот отвечал ровно на команду: «ich habe Euch nicht
+// verstanden, sagt es noch einmal». Плюс вторая ступень дёргала микрофон и он
+// мог не вернуться.
+// Стало: уходит короткое «Das war's.» — устная точка, которую промпт (§7.9b)
+// УЖЕ знает: «гость договорил, отвечай на то, что было сказано ДО этих слов».
+// Микрофон закрывается на 0,4 с ПЕРЕД отправкой (чтобы сервер увидел тишину и
+// закрыл ход) и возвращается в finally ВСЕГДА, без условий.
+// 18.09, прогон: голое «Das war's.» без расслышанной реплики робот принял за
+// ПРОЩАНИЕ гостя и начал прощаться сам. Поэтому сигнал — служебный токен без
+// собственного смысла, значение ему задаёт бриф (§10).
+// 24.09 — третья версия, после Вены (там 158 нажатий, из них 107 «вслепую»).
+// Проверено на живом мозге через WebRTC с записью «вопрос гостя + болтовня рядом»:
+//   не жать — ответ через 41 с; старая кнопка (микрофон на 0,4 с) — через 33 с;
+//   микрофон закрыт ДО НАЧАЛА ОТВЕТА — через 7 с и ровно на вопрос гостя.
+// Поэтому: одна команда, микрофон закрыт, пока робот не заговорит (не дольше
+// 15 с), никаких повторов — повтор в Вене только копил очередь (51 раз, 0 толку).
+// Текст команды — ROBOT.answerCue: ответить на последние слова гостя, а если
+// гость ничего не сказал — не выдумывать, а коротко переспросить.
+const TOCHKA = ROBOT.answerCue;
+let otvechajTimer=null, otvechajBylo='';
+function otpustitOtvechaj(prichina){
+  if(!otvechajDerzhit) return;
+  otvechajDerzhit=false; clearTimeout(otvechajTimer);
+  const b=$('answerNow');
+  if(b){ b.innerHTML=otvechajBylo||b.innerHTML; b.disabled=false; }
+  answerBusy=false;
+  if(prichina){ log(prichina); if(b) otklik(b,'не ответил — жми ещё',false); }
+  applyMic();
+}
+async function answerNow(){
+  if(answerBusy) return;                 // уже ждём ответ — второе нажатие ничего не добавит
+  const b=$('answerNow');
+  answerBusy=true; vibrate([50,40,50]);
+  if(!await ensureConn()){ answerBusy=false; log('⚠️ ОТВЕЧАЙ не ушло — нет связи'); otklik(b,'нет связи',false); flash('⚠️ Нет связи — сначала «Подключиться»'); return; }
+  if(quiet) setQuiet(false);
+  otvechajBylo=b.innerHTML;
+  b.innerHTML='⏳ СЛУШАНИЕ ЗАКРЫТО<br><small>отвечает на последние слова гостя…</small>'; b.disabled=true;
+  otvechajDerzhit=true; applyMic();      // микрофон закрыт, пока робот не заговорит
+  expectReply();
+  try{ conv.sendUserMessage(TOCHKA); log('⏭ ОТВЕЧАЙ — микрофон закрыт до ответа'); }
+  catch(e){ log('⚠️ Не ушло: '+(e?.message||e)); }
+  clearTimeout(otvechajTimer);
+  otvechajTimer=setTimeout(()=>otpustitOtvechaj('⚠️ ОТВЕЧАЙ: робот не заговорил за 15 с — слух возвращён'), OTVECHAJ_MAX_MS);
+}
+$('answerNow').onclick=answerNow;
+// «⏭ ОТВЕЧАЙ» — та же механика, но видимой кнопкой в быстрых действиях.
+// Нужна, когда вокруг шум и робот не понимает, что гость договорил (26.08).
+const knopkaOtvechaj = $('qaAnswer');
+if(knopkaOtvechaj) knopkaOtvechaj.onclick = answerNow;
+
+// ---- 🤫 ТИХО ----
+// Пауза без разрыва сессии. Микрофон закрыт, и раз в 8 секунд уходит
+// «оператор здесь» (см. levelStart) — двадцатисекундный таймер сервера не
+// срабатывает, и робот не лезет в тишину. Контекст дня и подсказки на месте,
+// настраивать заново ничего не нужно.
+function quietUI(){
+  const b=$('quietBtn'); if(!b) return;
+  b.style.background = quiet ? '#c8a020' : '#5a4a1e';
+  b.innerHTML = quiet ? '🔊 ПРОДОЛЖИТЬ — снова слушать<br><small>сейчас молчит и не слушает</small>'
+                      : '🤫 ТИХО — не заговаривать<br><small>сессия жива, робот молчит и не слушает</small>';
+}
+function setQuiet(v){
+  quiet=v; vibrate(v?[60,40,60]:40);
+  quietUI();
+  try{ window._hvatitUI?.(); }catch{}
+  if(v){ micWanted=false; }
+  else { micWanted = (micMode()==='open'); }
+  applyMic();
+  log(v?'🤫 Тихо — робот молчит, сессия жива':'🔊 Снова слушает');
+}
+$('quietBtn').onclick=()=>setQuiet(!quiet);
+
+// ---- ФИЗИЧЕСКИЕ КНОПКИ ----
+// Раскладка под Bluetooth-клавиатуру/педаль была написана 10.08 и УБРАНА по
+// решению Макса: пока нет проверенной живьём конкретной клавиатуры, пульт
+// клавиши не слушает. Возвращать только после его прямого «да».
+// Код лежит в backups/2026-08-10-ПЕРЕД-РАЗБОРОМ-ИВЕНТОВ/klaviatura-otlozheno.js
+
+// 24.09: раньше уходило тихой заметкой (sendContextualUpdate) — ElevenLabs по
+// такой заметке НИКОГДА не заговаривает сам, она лишь ложится в память до
+// следующей реплики гостя. В Вене Макс писал контекст и ждал реакции, а её
+// не было — «не понимал, что я пишу». Теперь текст уходит командой ⟦REGIE⟧,
+// ровно как русская команда голосом: робот выполняет сразу. После обрыва связи
+// он возвращается уже тихой заметкой (hiddenLog), чтобы сцена не играла дважды.
+$('sendCtx').onclick=async()=>{
+  vibrate(45);
+  const t=$('ctxInput').value.trim();
+  if(!t){ flash('⚠️ Сначала впиши задание в поле'); return; }
+  if(!await ensureConn()) return;
+  try{
+    expectReply();
+    conv.sendUserMessage(REGIE+' '+ROBOT.ctxCue+' '+t);
+    hiddenLog.push(t); if(hiddenLog.length>HIDDEN_MAX) hiddenLog.shift();
+    log('📩 Задание: '+t); $('ctxInput').value='';
+    otklik($('sendCtx'), agentSpeaking ? 'ушло — выполнит, когда договорит' : 'ушло');
+  }catch(e){ log('⚠️ Задание не ушло: '+(e?.message||e)); }
+};
+// Для прямого эфира отдельной кнопки НЕТ и не нужно (решение Макса 15.08:
+// пульт рабочий, новых функций перед эфиром не добавляем). Комментарий зрителя
+// набирается прямо сюда как «Marius schreibt: <текст>» — можно по-русски,
+// робот ответит по-немецки и обратится к автору по имени (§7.10 промпта).
+$('sayBtn').onclick=async()=>{
+  const t=$('sayInput').value.trim();
+  if(!t){ flash('⚠️ Сначала впиши реплику в поле'); return; }
+  if(!await ensureConn()) return;
+  try{ expectReply(); conv.sendUserMessage(t); log('🗣 Реплика гостя: '+t); $('sayInput').value=''; otklik($('sayBtn'),'ушло'); }
+  catch(e){ log('⚠️ Реплика не ушла: '+(e?.message||e)); }
+};
+
+// ---- 👤 ГОСТЬ СКАЗАЛ ----
+// Урок с визита к старшим 08.09: микрофон гостей часто не слышит вовсе
+// (тихий голос, шум, деменция), и оператор печатал слова гостя руками —
+// а робот считал, что гость сам заговорил по-русски. Токен ⟦GAST⟧ (по тому же
+// принципу, что и ⟦REGIE⟧) явно говорит агенту: это пересказ оператора,
+// отвечай гостю, а не оператору, и отвечай на языке гостя (обычно немецкий).
+const GAST='⟦GAST⟧';
+function gast(t){
+  if(!t) return;
+  if(!conv){ log('⚠️ ГОСТЬ СКАЗАЛ нажато без связи'); return; }
+  try{ expectReply(); conv.sendUserMessage(GAST+' '+t); log('👤 '+t); }
+  catch(e){ log('⚠️ Не ушло: '+(e?.message||e)); }
+}
+$('gastBtn').onclick=async()=>{
+  const t=$('gastInput').value.trim();
+  if(!t){ flash('⚠️ Сначала впиши, что сказал гость'); return; }
+  if(!await ensureConn()){ otklik($('gastBtn'),'нет связи',false); return; }
+  gast(t); $('gastInput').value=''; otklik($('gastBtn'), agentSpeaking ? 'ушло — ответит, когда договорит' : 'ушло');
+};
+// Enter отправляет (Shift+Enter — перенос строки, как в обычном чате)
+$('gastInput').addEventListener('keydown', e=>{
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); $('gastBtn').click(); }
+});
+
+// ---- НАДИКТОВКА ГОЛОСОМ ----
+// Оператор не печатает — зажимает кнопку и говорит на любом языке.
+// Запись → расшифровка через ElevenLabs Scribe → сразу уходит роботу как задание.
+$('apiKey').value=LS.get('xiKey')||'';
+let rec=null, recChunks=[], recStream=null;
+
+// Нажал — говоришь — нажал ещё раз. Зажимать ничего не надо:
+// оператор держит пульт в одной руке, второй управляет телом робота.
+async function dictStart(btn,cfg){
+  const key=$('apiKey').value.trim();
+  if(!key){ flash('🔑 Нет ключа ElevenLabs — впиши его на первом экране'); log('⚠️ Надиктовка: нет ключа'); return; }
+  // Сессию НЕ трогаем: обрыв ради записи рушил разрешения Chrome каскадом
+  // (31.07: после ШАГ 1 умирал даже обычный разговор до полной перезагрузки).
+  // Микрофон агента просто закрыт флагом — робот надиктовку не слышит.
+  dictating=true; applyMic();
+  try{
+    recStream=await navigator.mediaDevices.getUserMedia({audio:true});
+    recChunks=[]; rec=new MediaRecorder(recStream);
+    rec.ondataavailable=e=>{ if(e.data.size) recChunks.push(e.data); };
+    rec.start();
+    btn.textContent='✅ Я ЗАКОНЧИЛ';
+    btn.style.background='#c0392b';
+    log('🎙 Говори…'); vibrate(40);
+  }catch(e){
+    log('⚠️ Микрофон для надиктовки: '+(e?.message||e));
+    flash('🎤 Запись не открылась — набери задание текстом и жми ШАГ 2');
+    dictating=false; applyMic();
+  }
+}
+
+async function dictStop(btn,cfg){
+  if(!rec||rec.state==='inactive') return;
+  const done=new Promise(r=>{ rec.onstop=r; });
+  rec.stop(); await done;
+  try{ recStream.getTracks().forEach(t=>t.stop()); }catch{}
+  btn.textContent='⏳ Расшифровываю…';
+  const blob=new Blob(recChunks,{type:rec.mimeType||'audio/webm'});
+  if(blob.size<2000){ log('⚠️ Слишком коротко'); await dictReset(btn,cfg); return; }
+  try{
+    const fd=new FormData();
+    fd.append('file',blob,'a.webm');
+    fd.append('model_id','scribe_v1');
+    fd.append('tag_audio_events','false');
+    if(cfg.lang) fd.append('language_code',cfg.lang);   // напр. 'rus' — не гадать язык, если он известен заранее
+    const r=await fetch('https://api.elevenlabs.io/v1/speech-to-text',
+      {method:'POST',headers:{'xi-api-key':$('apiKey').value.trim()},body:fd});
+    if(!r.ok){ log('⚠️ Расшифровка не удалась: '+r.status); await dictReset(btn,cfg); return; }
+    const d=await r.json();
+    const text=(d.text||'').trim();
+    if(!text){ log('⚠️ Ничего не распознал'); await dictReset(btn,cfg); return; }
+    log('📝 Услышал: '+text);
+    await cfg.done(text);
+    vibrate([30,30,30]);
+  }catch(e){ log('⚠️ '+(e?.message||e)); }
+  await dictReset(btn,cfg);
+}
+async function dictReset(btn,cfg){
+  btn.textContent=cfg.label; btn.style.background='#b0431f'; rec=null;
+  dictating=false;
+  if(micMode()==='open' && conv) micWanted=true;   // руки свободны — вернуть эфир
+  applyMic();
+}
+// cfg = { label, done(text) }
+function wireDictation(btn,cfg){
+  btn.textContent=cfg.label;
+  btn.onclick=()=>{ (rec&&rec.state==='recording') ? dictStop(btn,cfg) : dictStart(btn,cfg); };
+}
+
+// ---- РЕЖИССЁР ----
+// Токен ⟦REGIE⟧ невозможно произнести голосом (STT выдаёт обычные слова, не скобки),
+// поэтому гость не может подделать режиссёрскую команду. Промпт §7.8 знает этот токен.
+const REGIE='⟦REGIE⟧';
+function sendRegie(t){
+  if(!t) return;
+  if(!conv){ log('⚠️ ШАГ 2 нажат без связи'); flash('⚠️ Нет связи — жми ▶️ ПРОДОЛЖИТЬ, потом ШАГ 2 ещё раз'); return; }
+  setWanted(false);                    // пока робот выдаёт монолог — микрофон закрыт
+  try{
+    expectReply();
+    conv.sendUserMessage(REGIE+' '+t);
+    pendingRegie=true;
+    vibrate([40,40,40]);
+    log('🎬 Сцена пошла: '+t.slice(0,80)+(t.length>80?'…':''));
+    $('dirInput').value='';
+
+  }catch(e){ log('⚠️ Задание не ушло: '+(e?.message||e)); }
+}
+// Кнопка горит только когда задание реально есть — иначе оператор
+// не понимает, чем она отличается от «надиктовать»
+function refreshDirButtons(){
+  // Кнопка горит от ТЕКСТА, а не от связи: во время паузы Макс вставлял
+  // задание, а кнопка была серой и молчала (31.07). Связь поднимет само нажатие.
+  const has=!!$('dirInput').value.trim();
+  $('dirBtn').disabled=!has;
+  $('dirBtn').style.background=has?'#1e8449':'';
+}
+async function ensureConn(){
+  if(!sessionCfg){ flash('⚠️ Сначала нажми «Подключиться» на первом экране'); return false; }
+  if(!conv && !connecting){ flash('▶️ Подключаю…'); await doConnect(true); }
+  return !!conv;
+}
+$('dirInput').addEventListener('input',refreshDirButtons);
+$('dirBtn').onclick=async()=>{
+  const t=$('dirInput').value.trim(); if(!t) return;
+  vibrate([35,25,35]);
+  if(!await ensureConn()) return;
+  sendRegie(t); refreshDirButtons(); otklik($('dirBtn'),'задание ушло');
+};
+const INSTANT={
+  // Кнопка «заговорить первым»: раз оператор её нажал — перед роботом ТОЧНО
+  // стоит человек.
+  qaHello: ROBOT.hello,
+  qaBye: ROBOT.bye,
+};
+let instantBusy=false;
+for(const id in INSTANT){
+  // 18.09: без этой проверки удалённая из разметки кнопка роняла ВЕСЬ скрипт
+  // на этой строке — и всё, что ниже (ГОСТЬ СКАЗАЛ, контекст, стоп), молча умирало
+  if(!$(id)) continue;
+  $(id).onclick=async()=>{
+    if(instantBusy) return;
+    // Раньше кнопка молча ждала подключения и «не нажималась» — Макс давил
+    // по пять раз (01.08). Теперь палец получает отклик мгновенно.
+    instantBusy=true; vibrate([35,25,35]); let ok=false;
+    const b=$(id), was=b.textContent;
+    b.textContent='⏳ …'; b.disabled=true;
+    try{
+      if(await ensureConn()){ sendRegie(INSTANT[id]); vibrate(60); ok=true; }
+    } finally {
+      b.textContent=was; b.disabled=false; instantBusy=false;
+      otklik(b, ok?'ушло':'нет связи', ok);
+    }
+  };
+}
+
+// Голосовой ввод задания убран по решению Макса 31.07: на айфоне Chrome
+// не даёт открыть второй микрофон, а обходы ломали живую сессию. Текст в поле
+// попадает вставкой или клавиатурным 🎤 Apple — это надёжно.
+// Реплика за гостя — уходит сразу, тут важна скорость
+wireDictation($('sayMic'), {
+  label:'🎤 Надиктовать',
+  done:t=>{ if(!conv) return;
+    try{ expectReply(); conv.sendUserMessage(t); log('🗣 За гостя: '+t); }catch(e){ log('⚠️ '+e); } }
+});
+// 🎙 для «ГОСТЬ СКАЗАЛ» — та же надиктовка, но язык явно русский (оператор
+// пересказывает гостя по-русски) и результат уходит через gast(), а не sayBtn.
+wireDictation($('gastMic'), {
+  label:'🎙', lang:'rus',
+  done:t=>gast(t),
+});
+
+// завершить — в два тапа (защита от случайного нажатия)
+let stopArmed=false, stopTimer=null;
+$('stopBtn').onclick=async()=>{
+  if(!stopArmed){ stopArmed=Date.now(); $('stopBtn').classList.add('arm'); $('stopBtn').textContent='Нажми ещё раз — точно завершить'; vibrate(30); stopTimer=setTimeout(()=>{ stopArmed=false; $('stopBtn').classList.remove('arm'); $('stopBtn').textContent='⏹ Завершить'; },3000); return; }
+  // случайный ДВОЙНОЙ тап проходил обе проверки за миллисекунды — требуем паузу
+  if(Date.now()-stopArmed < 600) return;
+  clearTimeout(stopTimer); userStopping=true; clearTimeout(reconnectTimer); reconnectTimer=null;
+  if(conv) await conv.endSession();
+  showSetup();
+};
+
+function showLive(){ $('setup').classList.add('hidden'); $('setup').style.display='none'; $('live').classList.remove('hidden'); $('live').style.display='flex'; renderBoard(); }
+function showSetup(){
+  conv=null; micWanted=false; agentSpeaking=false; boardPlaying=false; stopArmed=false;
+  clearTimeout(tailTimer); clearTimeout(toggleTimer); clearTimeout(reconnectTimer); reconnectTimer=null;
+  clockStop();
+  try{wakeLock?.release?.();}catch{}
+  document.body.classList.remove('s-listen','s-speak');
+  $('reconnBanner').classList.add('hidden');
+  $('stopBtn').classList.remove('arm'); $('stopBtn').textContent='⏹ Завершить';
+  reconnectTries=0;
+  $('live').classList.add('hidden'); $('live').style.display='none';
+  $('setup').classList.remove('hidden'); $('setup').style.display='flex';
+  $('connDot').classList.remove('on'); $('connText').textContent='не подключено';
+  $('modeDot').classList.remove('speak'); $('modeText').textContent='—';
+}
+
+renderBoard();
+refreshMicList();   // сохранённый микрофон/выход должны работать уже с ПЕРВОГО подключения
+
+// ══════════ ФИЗИЧЕСКИЕ КНОПКИ ПО BLUETOOTH ══════════
+// Педали-«листалки» и пульты для читалок прикидываются обычной Bluetooth-
+// клавиатурой и шлют PageUp/PageDown/стрелки/пробел — браузер получает их как
+// обычное нажатие клавиши. ВАЖНО: дешёвые «кнопки для селфи» шлют кнопки
+// громкости, а их Android забирает себе и странице не отдаёт — такие не годятся.
+const DEJSTVIYA = [
+  // две главные — ради них всё и затевалось
+  ['mic',    '🎤 ГОВОРИТЬ (нажал / нажал ещё раз)', ()=>$('ptt')?.click()],
+  ['stop',   '✋ ХВАТИТ — замолчать',                ()=>$('stopTalk')?.click()],
+  ['off',    '⏹ ПОЛНЫЙ СТОП — оборвать связь',      ()=>$('hushBtn2')?.click()],
+  // необязательные, если на устройстве есть лишние кнопки
+  ['hello',  '🗣 Заговорить первым',               ()=>$('qaHello')?.click()],
+  ['follow', '📣 Подписка',                         ()=>$('qaFollow')?.click()],
+  ['bye',    '👋 Завершить диалог',                 ()=>$('qaBye')?.click()],
+];
+let klavishi = {};
+try{ klavishi = JSON.parse(LS.get('klavishi')||'{}'); }catch{}
+let uchim = null;          // какое действие сейчас ждёт нажатия
+const poslednie = [];      // последние нажатия — для проверки устройства
+
+function risuemKlavishi(){
+  const box = $('klavList'); if(!box) return;
+  box.innerHTML = '';
+  for(const [id, imya] of DEJSTVIYA){
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.style.cssText = 'margin-bottom:6px;align-items:center';
+    const t = document.createElement('div');
+    t.style.cssText = 'flex:1;font-size:14px';
+    t.textContent = imya + (klavishi[id] ? '  →  ' + klavishi[id] : '  →  не назначена');
+    const b = document.createElement('button');
+    b.textContent = uchim===id ? '…жми кнопку' : 'Назначить';
+    b.style.cssText = 'flex:0 0 auto;padding:8px 12px;font-size:13px';
+    b.onclick = ()=>{ uchim = (uchim===id? null : id); risuemKlavishi();
+      if(uchim) flash('Нажми кнопку на устройстве'); };
+    const d = document.createElement('button');
+    d.textContent = '✕'; d.title = 'снять';
+    d.style.cssText = 'flex:0 0 auto;padding:8px 10px;font-size:13px;background:#553';
+    d.onclick = ()=>{ delete klavishi[id]; store('klavishi', JSON.stringify(klavishi)); risuemKlavishi(); };
+    row.append(t, b, d);
+    box.appendChild(row);
+  }
+}
+risuemKlavishi();
+
+function kodKlavishi(e){ return e.code || e.key; }
+
+window.addEventListener('keydown', e=>{
+  // не мешаем печатать в полях ввода
+  const t = e.target;
+  if(t && (t.tagName==='INPUT' || t.tagName==='TEXTAREA' || t.isContentEditable)) return;
+  const k = kodKlavishi(e);
+  // Копим последние пять нажатий: по ним сразу видно, что именно шлёт пульт
+  // и шлёт ли вообще (кнопки громкости до страницы не доходят никогда).
+  poslednie.unshift({k, t: new Date().toLocaleTimeString('ru-RU')});
+  poslednie.length = Math.min(poslednie.length, 5);
+  $('lastKey').innerHTML = '<b>Приходят клавиши:</b><br>' +
+    poslednie.map(p => `${p.t} — <b>${p.k}</b>`).join('<br>') +
+    (uchim ? '<br><span style="color:#e0c060">назначаю…</span>' : '');
+  if(uchim){
+    // одна клавиша — одно действие: снимаем её с прошлого владельца
+    for(const id in klavishi) if(klavishi[id]===k) delete klavishi[id];
+    klavishi[uchim] = k; store('klavishi', JSON.stringify(klavishi));
+    log('🎛 «'+k+'» назначена: '+(DEJSTVIYA.find(d=>d[0]===uchim)||[])[1]);
+    uchim = null; risuemKlavishi(); e.preventDefault(); return;
+  }
+  const id = Object.keys(klavishi).find(i => klavishi[i]===k);
+  if(!id) return;
+  e.preventDefault();
+  navigator.vibrate?.(30);
+  // микрофон в режиме «держать»: педаль держат — микрофон открыт
+  // в режиме «нажал-нажал» удержание не нужно: клик по кнопке делает всё сам
+  (DEJSTVIYA.find(d=>d[0]===id)||[])[2]?.();
+});
+
+window.addEventListener('keyup', e=>{
+  const k = kodKlavishi(e);
+  if(klavishi.mic===k && micMode()==='hold' && micWanted) setWanted(false);
+});
+
+// ── ЗАМОК ЭКРАНА: телефон в кармане, касания игнорируются, кнопки работают ──
+$('lockBtn').onclick = ()=>{
+  $('lockScreen').classList.remove('hidden');
+  keepAwake();
+  log('🔒 Экран заперт — работают только физические кнопки');
+};
+(function(){
+  const hold = $('lockHold'); if(!hold) return;
+  // Отпирание по ВРЕМЕНИ, а не по числу тиков: в фоне браузер придерживает
+  // таймеры, и счётчик тиков врал — замок то не открывался, то открывался сам.
+  const DERZHAT = 3000;
+  let nachalo = 0, tik = null;
+  function stop(){ if(tik){ clearInterval(tik); tik = null; } nachalo = 0; hold.textContent = 'держи'; }
+  function start(){
+    stop();
+    nachalo = performance.now();
+    tik = setInterval(()=>{
+      const proshlo = performance.now() - nachalo;
+      if(proshlo >= DERZHAT){ stop(); $('lockScreen').classList.add('hidden'); log('🔓 Экран отперт'); return; }
+      hold.textContent = Math.ceil((DERZHAT - proshlo)/1000) + '…';
+    }, 200);
+  }
+  hold.addEventListener('pointerdown', e=>{ e.preventDefault(); start(); });
+  ['pointerup','pointercancel','pointerleave'].forEach(ev => hold.addEventListener(ev, stop));
+  // страховка: палец отпустили мимо кружка
+  window.addEventListener('pointerup', ()=>{ if(nachalo) stop(); });
+})();
+
+</script>
+</body>
+</html>
