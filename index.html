@@ -316,7 +316,7 @@ const ROBOT = {
   ns: 'vivesbot:',                               // префикс памяти браузера — СВОЙ у каждого пульта (домен GitHub Pages общий)
   agent: 'agent_0201m3b6s54vej0s44wmx1nc8hkr',  // мозг Vives-bot (deploy_robot.py --robot vives), говорит по-нидерландски
   title: 'Vives-bot · Брюгге',
-  version: '25.09.2026 Vives-bot',
+  version: '25.09.2026 Vives-bot · кнопки',
   dayCtx: 'Vrijdag 25 september 2026, Brugge, Hogeschool Vives, Zorglab. Een filmploeg maakt de film van het Zorglab voor het Digital Health Platform. Je spreekt vandaag Nederlands.',
 
   // Копия пульта Максимилиана v «25.09 одна кнопка» (решение Макса: пульт — копия лучшего готового).
@@ -1267,13 +1267,27 @@ let answerBusy=false;
 // гость ничего не сказал — не выдумывать, а коротко переспросить.
 const TOCHKA = ROBOT.answerCue;
 let otvechajTimer=null, otvechajBylo='';
+// 25.09: ОДНО правило для всех команд, после которых робот должен заговорить (ОТВЕЧАЙ,
+// ЗАДАНИЕ, ГОСТЬ СКАЗАЛ, Заговорить первым, Завершить). Стенд кнопок нашёл две дыры:
+// 1) ЗАДАНИЕ и ГОСТЬ СКАЗАЛ не закрывали слух — в шуме текст ждал в очереди за незакрытой
+//    репликой (венское «с опозданием или вообще не то»);
+// 2) после ✋ ХВАТИТ эти кнопки заставляли робота говорить, но он оставался глухим.
+// Теперь: «хватит» снимается, слух закрыт до начала ответа, но не дольше 15 секунд.
+function gotovitKOtvetu(){
+  if(quiet) setQuiet(false);
+  otvechajDerzhit=true; applyMic();
+  expectReply();
+  clearTimeout(otvechajTimer);
+  otvechajTimer=setTimeout(()=>otpustitOtvechaj('⚠️ Робот не заговорил за 15 с — слух возвращён'), OTVECHAJ_MAX_MS);
+}
 function otpustitOtvechaj(prichina){
   if(!otvechajDerzhit) return;
   otvechajDerzhit=false; clearTimeout(otvechajTimer);
   const b=$('answerNow');
-  if(b){ b.innerHTML=otvechajBylo||b.innerHTML; b.disabled=false; }
+  if(answerBusy && b){ b.innerHTML=otvechajBylo||b.innerHTML; b.disabled=false;
+    if(prichina) otklik(b,'не ответил — жми ещё',false); }
   answerBusy=false;
-  if(prichina){ log(prichina); if(b) otklik(b,'не ответил — жми ещё',false); }
+  if(prichina) log(prichina);
   applyMic();
 }
 async function answerNow(){
@@ -1281,15 +1295,11 @@ async function answerNow(){
   const b=$('answerNow');
   answerBusy=true; vibrate([50,40,50]);
   if(!await ensureConn()){ answerBusy=false; log('⚠️ ОТВЕЧАЙ не ушло — нет связи'); otklik(b,'нет связи',false); flash('⚠️ Нет связи — сначала «Подключиться»'); return; }
-  if(quiet) setQuiet(false);
   otvechajBylo=b.innerHTML;
   b.innerHTML='⏳ СЛУШАНИЕ ЗАКРЫТО<br><small>отвечает на последние слова гостя…</small>'; b.disabled=true;
-  otvechajDerzhit=true; applyMic();      // микрофон закрыт, пока робот не заговорит
-  expectReply();
+  gotovitKOtvetu();                      // «хватит» снят, микрофон закрыт, пока робот не заговорит
   try{ conv.sendUserMessage(TOCHKA); log('⏭ ОТВЕЧАЙ — микрофон закрыт до ответа'); }
   catch(e){ log('⚠️ Не ушло: '+(e?.message||e)); }
-  clearTimeout(otvechajTimer);
-  otvechajTimer=setTimeout(()=>otpustitOtvechaj('⚠️ ОТВЕЧАЙ: робот не заговорил за 15 с — слух возвращён'), OTVECHAJ_MAX_MS);
 }
 $('answerNow').onclick=answerNow;
 // «⏭ ОТВЕЧАЙ» — та же механика, но видимой кнопкой в быстрых действиях.
@@ -1337,7 +1347,7 @@ $('sendCtx').onclick=async()=>{
   if(!t){ flash('⚠️ Сначала впиши задание в поле'); return; }
   if(!await ensureConn()) return;
   try{
-    expectReply();
+    gotovitKOtvetu();
     conv.sendUserMessage(REGIE+' '+ROBOT.ctxCue+' '+t);
     hiddenLog.push(t); if(hiddenLog.length>HIDDEN_MAX) hiddenLog.shift();
     log('📩 Задание: '+t); $('ctxInput').value='';
@@ -1366,7 +1376,7 @@ const GAST='⟦GAST⟧';
 function gast(t){
   if(!t) return;
   if(!conv){ log('⚠️ ГОСТЬ СКАЗАЛ нажато без связи'); return; }
-  try{ expectReply(); conv.sendUserMessage(GAST+' '+t); log('👤 '+t); }
+  try{ gotovitKOtvetu(); conv.sendUserMessage(GAST+' '+t); log('👤 '+t); }
   catch(e){ log('⚠️ Не ушло: '+(e?.message||e)); }
 }
 $('gastBtn').onclick=async()=>{
@@ -1455,9 +1465,9 @@ const REGIE='⟦REGIE⟧';
 function sendRegie(t){
   if(!t) return;
   if(!conv){ log('⚠️ ШАГ 2 нажат без связи'); flash('⚠️ Нет связи — жми ▶️ ПРОДОЛЖИТЬ, потом ШАГ 2 ещё раз'); return; }
-  setWanted(false);                    // пока робот выдаёт монолог — микрофон закрыт
+  if(micMode()==='toggle') setWanted(false);   // «по кнопке»: после сцены микрофон ждёт нажатия
   try{
-    expectReply();
+    gotovitKOtvetu();                    // «хватит» снят, слух закрыт до ответа (не дольше 15 с)
     conv.sendUserMessage(REGIE+' '+t);
     pendingRegie=true;
     vibrate([40,40,40]);
